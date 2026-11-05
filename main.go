@@ -162,7 +162,7 @@ func (s *server) mine(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.peers.broadcast("/api/blocks", block)
-	writeJSON(w, http.StatusCreated, map[string]any{"block": block, "reward": blockReward})
+	writeJSON(w, http.StatusCreated, map[string]any{"block": block, "reward": blockSubsidy(block.Index)})
 }
 
 func main() {
