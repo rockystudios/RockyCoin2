@@ -51,5 +51,12 @@ Setup:
    second `<script>` in `index.html`. Never use the `service_role` key.
 3. Tune `difficulty` and `min_seconds_between_coins` in the `chain_state` table.
 
-The ledger is centralized in Supabase, addresses are public identifiers (no
-signatures or transfers), and ROCKY has no monetary value.
+Wallets: each browser creates a secret key; the address is derived from it
+(`RC` + first 40 hex of SHA-256(`rocky-address:` + secret)). You can name a wallet
+and send ROCKY to an address or `@name`. The secret is sent to Supabase over HTTPS
+when you send or rename, so the ledger operator could in principle see it.
+Back up your secret key, because losing it means losing the wallet.
+
+Re-run `supabase/schema.sql` after updating; it is safe to run again.
+
+The ledger is centralized in Supabase and ROCKY has no monetary value.

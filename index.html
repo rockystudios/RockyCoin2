@@ -198,10 +198,23 @@
     .coin.mine { border-color: rgb(55 242 165 / 45%); }
     .empty { padding: 1rem; border: 1px dashed var(--line); border-radius: 10px; color: var(--muted); text-align: center; font-size: 0.85rem; }
 
-    .rank { display: grid; grid-template-columns: 1.5rem minmax(0, 1fr) auto; gap: 0.6rem; align-items: center; padding: 0.5rem 0; border-bottom: 1px solid var(--line); font-size: 0.82rem; }
-    .rank:last-child { border-bottom: 0; }
-    .rank .n { color: var(--muted); }
-    .rank .b { color: var(--gold); font-weight: 700; }
+    .field { display: grid; gap: 0.4rem; margin-top: 1rem; }
+    .inline { display: flex; gap: 0.5rem; }
+    .inline input { flex: 1 1 0; min-width: 0; }
+    input {
+      min-height: 38px;
+      padding: 0.4rem 0.7rem;
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      background: #0a1019;
+      color: var(--text, #e6edf7);
+      font: inherit;
+      font-size: 0.85rem;
+    }
+    input:focus-visible { outline: 2px solid var(--cyan); outline-offset: 2px; }
+    input.amount { flex: 0 0 5.5rem; }
+    .inline button { min-height: 38px; padding: 0.4rem 0.9rem; font-size: 0.85rem; }
+    .wallet-name { font-weight: 750; font-size: 1.05rem; margin: 0.2rem 0 0.6rem; }
 
     .toast {
       position: fixed;
@@ -282,18 +295,38 @@
       <div class="stack">
         <section class="card" aria-labelledby="wallet-title">
           <h2 id="wallet-title">Wallet</h2>
+          <div id="wallet-name" class="wallet-name mono">Unnamed wallet</div>
           <div class="label">Your address</div>
           <div id="address" class="address mono"></div>
           <div class="row-buttons">
-            <button id="copy-btn" type="button">Copy</button>
-            <button id="import-btn" type="button">Use another address</button>
+            <button id="copy-btn" type="button">Copy address</button>
+            <button id="backup-btn" type="button">Back up secret key</button>
+            <button id="import-btn" type="button">Import wallet</button>
             <button id="new-btn" type="button">New wallet</button>
           </div>
+
+          <form id="name-form" class="field" autocomplete="off">
+            <label class="label" for="name-input">Wallet name</label>
+            <div class="inline">
+              <input id="name-input" class="mono" type="text" maxlength="20" placeholder="e.g. rocky_miner" spellcheck="false">
+              <button type="submit">Save name</button>
+            </div>
+          </form>
+
+          <form id="send-form" class="field" autocomplete="off">
+            <label class="label" for="send-to">Send ROCKY</label>
+            <div class="inline">
+              <input id="send-to" class="mono" type="text" placeholder="Wallet name or RC… address" spellcheck="false" required>
+              <input id="send-amount" class="mono amount" type="number" min="1" step="1" placeholder="Amount" required>
+            </div>
+            <button id="send-btn" type="submit">Send</button>
+          </form>
+          <p id="wallet-status" class="status" aria-live="polite"></p>
         </section>
 
-        <section class="card" aria-labelledby="board-title">
-          <h2 id="board-title">Top miners</h2>
-          <div id="board"></div>
+        <section class="card" aria-labelledby="activity-title">
+          <h2 id="activity-title">Your transfers</h2>
+          <ul id="activity" class="list" aria-live="polite"></ul>
         </section>
 
         <section class="card" aria-labelledby="chain-title">
@@ -305,7 +338,7 @@
     </div>
 
     <footer>
-      <p><strong>Testnet notice:</strong> ROCKY has no monetary value and is not for sale. Mined coins are recorded in a shared Supabase ledger, and the database verifies every hash before accepting a coin. Wallet addresses are public identifiers, not secure keys, and coins can't be transferred yet. Clearing your browser data removes your saved address, so copy it somewhere safe.</p>
+      <p><strong>Testnet notice:</strong> ROCKY has no monetary value and is not for sale. Mined coins are recorded in a shared Supabase ledger, and the database verifies every hash before accepting a coin. Wallet addresses are public identifiers. Your secret key controls the wallet, so back it up and never share it. Anyone with the key can spend your coins, and the key is sent to the ledger server when you send coins or set a name. Clearing your browser data removes the saved key.</p>
     </footer>
   </main>
 
@@ -453,7 +486,8 @@
       supabaseKey: "sb_publishable_5X0Vi4fVEpp1zqfaCvkTzg_UlVWhJtz"
     };
 
-    const WALLET_KEY = "rockycoin.wallet.v2";
+    const WALLET_KEY = "rockycoin.secret.v3";
+    const SECRET_PATTERN = /^[a-f0-9]{64}$/;
     const MAX_THREADS = Math.min(Math.max((navigator.hardwareConcurrency || 2) - 1, 1), 4);
     const POLL_MS = 4000;
     const ADDRESS_PATTERN = /^RC[a-f0-9]{40}$/;
@@ -461,6 +495,8 @@
 
     const state = {
       wallet: "",
+      secret: "",
+      name: "",
       tip: "0".repeat(64),
       height: 0,
       difficulty: 6,
@@ -480,7 +516,8 @@
       balance: $("balance"), height: $("height"), difficulty: $("difficulty"), hashrate: $("hashrate"),
       mineBtn: $("mine-btn"), stream: $("stream"), sessionCoins: $("session-coins"),
       sessionEarned: $("session-earned"), threads: $("threads"), status: $("mine-status"),
-      address: $("address"), tip: $("tip"), ledger: $("ledger"), board: $("board"), toast: $("toast")
+      address: $("address"), tip: $("tip"), ledger: $("ledger"), toast: $("toast"),
+      walletName: $("wallet-name"), nameInput: $("name-input"), activity: $("activity"), walletStatus: $("wallet-status")
     };
 
     function randomHex(byteCount) {
@@ -489,17 +526,24 @@
       return Array.from(bytes, (b) => b.toString(16).padStart(2, "0")).join("");
     }
 
-    function saveWallet(address) {
-      try { localStorage.setItem(WALLET_KEY, address); } catch { /* storage unavailable */ }
+    // The address is derived from the secret key: "RC" + first 40 hex of SHA-256("rocky-address:" + secret).
+    async function addressFor(secret) {
+      const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(`rocky-address:${secret}`));
+      const hex = Array.from(new Uint8Array(digest), (b) => b.toString(16).padStart(2, "0")).join("");
+      return `RC${hex.slice(0, 40)}`;
     }
 
-    function loadWallet() {
+    function saveSecret(secret) {
+      try { localStorage.setItem(WALLET_KEY, secret); } catch { /* storage unavailable */ }
+    }
+
+    function loadSecret() {
       try {
         const saved = localStorage.getItem(WALLET_KEY);
-        if (saved && ADDRESS_PATTERN.test(saved)) return saved;
+        if (saved && SECRET_PATTERN.test(saved)) return saved;
       } catch { /* storage unavailable */ }
-      const created = `RC${randomHex(20)}`;
-      saveWallet(created);
+      const created = randomHex(32);
+      saveSecret(created);
       return created;
     }
 
@@ -542,7 +586,20 @@
       return body;
     }
 
-    function renderWallet() { el.address.textContent = state.wallet; }
+    function renderWallet() {
+      el.address.textContent = state.wallet;
+      el.walletName.textContent = state.name ? `@${state.name}` : "Unnamed wallet";
+    }
+
+    function setWalletStatus(message, kind = "") {
+      el.walletStatus.textContent = message;
+      el.walletStatus.dataset.kind = kind;
+    }
+
+    function displayWallet(address, names) {
+      if (address === state.wallet) return "you";
+      return names.get(address) ? `@${names.get(address)}` : shorten(address, 10, 6);
+    }
 
     function renderChain() {
       el.height.textContent = state.height.toLocaleString();
@@ -584,29 +641,33 @@
       }
     }
 
-    function renderBoard(rows) {
-      el.board.replaceChildren();
+    function renderActivity(rows, names) {
+      el.activity.replaceChildren();
       if (!rows.length) {
-        const empty = document.createElement("div");
+        const empty = document.createElement("li");
         empty.className = "empty";
-        empty.textContent = "No miners yet.";
-        el.board.append(empty);
+        empty.textContent = "No transfers yet.";
+        el.activity.append(empty);
         return;
       }
-      rows.forEach((row, index) => {
-        const line = document.createElement("div");
-        line.className = "rank mono";
-        const n = document.createElement("span");
-        n.className = "n";
-        n.textContent = String(index + 1);
+      for (const row of rows) {
+        const sent = row.from_wallet === state.wallet;
+        const item = document.createElement("li");
+        item.className = `coin mono${sent ? "" : " mine"}`;
+        const dir = document.createElement("span");
+        dir.className = "h";
+        dir.textContent = sent ? "OUT" : "IN";
         const who = document.createElement("span");
-        who.textContent = row.wallet === state.wallet ? "you" : shorten(row.wallet, 10, 6);
-        const bal = document.createElement("span");
-        bal.className = "b";
-        bal.textContent = Number(row.balance).toLocaleString();
-        line.append(n, who, bal);
-        el.board.append(line);
-      });
+        who.textContent = displayWallet(sent ? row.to_wallet : row.from_wallet, names);
+        const amount = document.createElement("span");
+        amount.className = "amt";
+        amount.textContent = `${sent ? "−" : "+"}${row.amount} ROCKY`;
+        const sub = document.createElement("span");
+        sub.className = "sub";
+        sub.textContent = timeAgo(row.created_at);
+        item.append(dir, who, amount, sub);
+        el.activity.append(item);
+      }
     }
 
     function pushStream(hash) {
@@ -634,12 +695,18 @@
     async function refresh() {
       if (!configured) return;
       try {
-        const [chain, coins, mine, board] = await Promise.all([
+        const [chain, coins, mine, transfers] = await Promise.all([
           api("chain_state?id=eq.1&select=tip_hash,height,difficulty"),
           api("mined_coins?select=height,wallet,hash,reward,created_at&order=height.desc&limit=8"),
-          api(`balances?wallet=eq.${state.wallet}&select=balance`),
-          api("balances?select=wallet,balance&order=balance.desc&limit=5")
+          api(`balances?wallet=eq.${state.wallet}&select=balance,name`),
+          api(`transfers?or=(from_wallet.eq.${state.wallet},to_wallet.eq.${state.wallet})&select=from_wallet,to_wallet,amount,created_at&order=id.desc&limit=6`)
         ]);
+        const others = [...new Set(transfers.map((t) => (t.from_wallet === state.wallet ? t.to_wallet : t.from_wallet)))];
+        const names = new Map();
+        if (others.length) {
+          const rows = await api(`wallets?address=in.(${others.join(",")})&select=address,name`);
+          for (const row of rows) if (row.name) names.set(row.address, row.name);
+        }
         const tipChanged = chain[0].tip_hash !== state.tip || chain[0].difficulty !== state.difficulty;
         state.tip = chain[0].tip_hash;
         state.height = Number(chain[0].height);
@@ -647,7 +714,9 @@
         el.balance.textContent = Number(mine[0] ? mine[0].balance : 0).toLocaleString();
         renderChain();
         renderLedger(coins);
-        renderBoard(board);
+        state.name = (mine[0] && mine[0].name) || "";
+        renderWallet();
+        renderActivity(transfers, names);
         setNetwork("live", `Live · coin ${state.height.toLocaleString()}`);
         if (tipChanged && state.mining && !state.submitting) restartWorkers();
       } catch (error) {
@@ -736,13 +805,18 @@
       if (state.mining && !state.submitting) restartWorkers();
     }
 
-    function switchWallet(address) {
-      state.wallet = address;
-      saveWallet(address);
+    async function useSecret(secret) {
+      state.secret = secret;
+      state.wallet = await addressFor(secret);
+      state.name = "";
+      saveSecret(secret);
       state.sessionCoins = 0;
       state.sessionEarned = 0;
       renderWallet();
       renderSession();
+      renderActivity([], new Map());
+      setWalletStatus("");
+      if (configured) api("rpc/register_wallet", { method: "POST", body: JSON.stringify({ p_secret: secret }) }).catch(() => {});
       if (state.mining && !state.submitting) restartWorkers();
       refresh();
     }
@@ -760,28 +834,76 @@
       }
     });
 
+    $("backup-btn").addEventListener("click", async () => {
+      try {
+        await navigator.clipboard.writeText(state.secret);
+        setWalletStatus("Secret key copied. Store it somewhere private; anyone with it can spend your coins.", "success");
+      } catch {
+        prompt("Your secret key (keep it private):", state.secret);
+      }
+    });
+
     $("new-btn").addEventListener("click", () => {
-      if (confirm("Create a new wallet? Coins on your current address stay on the ledger, but you must copy the address first to use it again.")) {
-        switchWallet(`RC${randomHex(20)}`);
+      if (confirm("Create a new wallet? Back up your current secret key first, or you will lose access to its coins.")) {
+        useSecret(randomHex(32));
       }
     });
 
     $("import-btn").addEventListener("click", () => {
-      const entered = (prompt("Paste a wallet address (RC followed by 40 hex characters):") || "").trim().toLowerCase();
+      const entered = (prompt("Paste your 64-character secret key:") || "").trim().toLowerCase();
       if (!entered) return;
-      if (!ADDRESS_PATTERN.test(entered)) {
-        setStatus("That isn't a valid RockyCoin address.", "error");
+      if (!SECRET_PATTERN.test(entered)) {
+        setWalletStatus("That isn't a valid secret key.", "error");
         return;
       }
-      switchWallet(entered);
+      useSecret(entered);
     });
 
-    state.wallet = loadWallet();
+    $("name-form").addEventListener("submit", async (event) => {
+      event.preventDefault();
+      if (!configured) return;
+      try {
+        const result = await api("rpc/set_wallet_name", { method: "POST", body: JSON.stringify({ p_secret: state.secret, p_name: el.nameInput.value }) });
+        state.name = result.name;
+        el.nameInput.value = "";
+        renderWallet();
+        setWalletStatus(`Wallet named @${result.name}.`, "success");
+      } catch (error) {
+        setWalletStatus(error.message, "error");
+      }
+    });
+
+    $("send-form").addEventListener("submit", async (event) => {
+      event.preventDefault();
+      if (!configured) return;
+      const to = $("send-to").value.trim();
+      const amount = Number($("send-amount").value);
+      if (!Number.isInteger(amount) || amount < 1) {
+        setWalletStatus("Enter a whole number of ROCKY to send.", "error");
+        return;
+      }
+      if (!confirm(`Send ${amount} ROCKY to ${to}? Transfers can't be undone.`)) return;
+      $("send-btn").disabled = true;
+      try {
+        const result = await api("rpc/transfer", { method: "POST", body: JSON.stringify({ p_secret: state.secret, p_to: to, p_amount: amount }) });
+        $("send-to").value = "";
+        $("send-amount").value = "";
+        setWalletStatus(`Sent ${amount} ROCKY to ${to}.`, "success");
+        toast(`Sent ${amount} ROCKY`);
+        el.balance.textContent = Number(result.balance).toLocaleString();
+        refresh();
+      } catch (error) {
+        setWalletStatus(error.message, "error");
+      } finally {
+        $("send-btn").disabled = false;
+      }
+    });
+
     renderWallet();
     renderChain();
     renderSession();
     renderLedger([]);
-    renderBoard([]);
+    renderActivity([], new Map());
 
     if (!configured) {
       el.banner.hidden = false;
@@ -790,9 +912,10 @@
       setNetwork("error", "Unsupported browser");
       setStatus("This browser can't run mining workers.", "error");
     } else {
-      el.mineBtn.disabled = false;
-      refresh();
-      setInterval(refresh, POLL_MS);
+      useSecret(loadSecret()).then(() => {
+        el.mineBtn.disabled = false;
+        setInterval(refresh, POLL_MS);
+      });
     }
   </script>
 </body>
