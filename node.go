@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"math/big"
 	"os"
 	"path/filepath"
 	"strings"
@@ -15,14 +16,27 @@ import (
 )
 
 const (
-	blockReward = uint64(50)
-	difficulty  = "00"
+	initialBlockReward = uint64(50)
+	halvingInterval    = uint64(210000)
+	minTxFee           = uint64(1)
+
+	genesisTimestamp  = int64(1793900000000)
+	initialDifficulty = uint8(8)
+	minDifficulty     = uint8(4)
+	maxDifficulty     = uint8(40)
+	retargetInterval  = 10
+	targetBlockTimeMs = int64(30000)
+
+	maxBlockTransactions   = 500
+	maxPendingTransactions = 500
+	maxClockDrift          = 2 * time.Hour
 )
 
 type Transaction struct {
 	From      string `json:"from"`
 	To        string `json:"to"`
 	Amount    uint64 `json:"amount"`
+	Fee       uint64 `json:"fee"`
 	Nonce     uint64 `json:"nonce"`
 	PublicKey string `json:"publicKey"`
 	Signature string `json:"signature"`
@@ -34,8 +48,70 @@ type Block struct {
 	PreviousHash string        `json:"previousHash"`
 	Miner        string        `json:"miner"`
 	Transactions []Transaction `json:"transactions"`
+	Difficulty   uint8         `json:"difficulty"`
 	Nonce        uint64        `json:"nonce"`
 	Hash         string        `json:"hash"`
+}
+
+// blockSubsidy halves every halvingInterval blocks, so total supply is capped (see PROTOCOL.md).
+func blockSubsidy(index uint64) uint64 {
+	halvings := index / halvingInterval
+	if halvings >= 64 {
+		return 0
+	}
+	return initialBlockReward >> halvings
+}
+
+func leadingZeroBits(hexHash string) int {
+	raw, err := hex.DecodeString(hexHash)
+	if err != nil {
+		return -1
+	}
+	bits := 0
+	for _, b := range raw {
+		if b == 0 {
+			bits += 8
+			continue
+		}
+		bits += bits8(b)
+		break
+	}
+	return bits
+}
+
+func bits8(b byte) int {
+	n := 0
+	for mask := byte(0x80); mask != 0 && b&mask == 0; mask >>= 1 {
+		n++
+	}
+	return n
+}
+
+// expectedDifficulty is the difficulty the block following chain must carry.
+func expectedDifficulty(chain []Block) uint8 {
+	last := chain[len(chain)-1]
+	next := len(chain)
+	if next%retargetInterval != 0 {
+		return last.Difficulty
+	}
+	timespan := last.Timestamp - chain[next-retargetInterval].Timestamp
+	expected := int64(retargetInterval-1) * targetBlockTimeMs
+	switch {
+	case timespan < expected/2 && last.Difficulty < maxDifficulty:
+		return last.Difficulty + 1
+	case timespan > expected*2 && last.Difficulty > minDifficulty:
+		return last.Difficulty - 1
+	}
+	return last.Difficulty
+}
+
+// chainWork is the total expected hashing work, summing 2^difficulty per block.
+func chainWork(chain []Block) *big.Int {
+	total := new(big.Int)
+	for _, block := range chain[1:] {
+		total.Add(total, new(big.Int).Lsh(big.NewInt(1), uint(block.Difficulty)))
+	}
+	return total
 }
 
 type diskState struct {
@@ -52,7 +128,7 @@ type Node struct {
 }
 
 func genesisBlock() Block {
-	return Block{Index: 0, Timestamp: 0, PreviousHash: "0", Miner: "RockyCoin", Transactions: []Transaction{}, Hash: "genesis"}
+	return Block{Index: 0, Timestamp: genesisTimestamp, PreviousHash: "0", Miner: "RockyCoin", Transactions: []Transaction{}, Difficulty: initialDifficulty, Hash: "genesis"}
 }
 
 func NewNode(dataFile string) (*Node, error) {
@@ -97,14 +173,21 @@ func signingPayload(tx Transaction) []byte {
 		From   string `json:"from"`
 		To     string `json:"to"`
 		Amount uint64 `json:"amount"`
+		Fee    uint64 `json:"fee"`
 		Nonce  uint64 `json:"nonce"`
-	}{tx.From, tx.To, tx.Amount, tx.Nonce})
+	}{tx.From, tx.To, tx.Amount, tx.Fee, tx.Nonce})
 	return data
 }
 
 func verifyTransaction(tx Transaction) error {
 	if !validAddress(tx.From) || !validAddress(tx.To) || tx.Amount == 0 {
 		return errors.New("invalid sender, recipient, or amount")
+	}
+	if tx.Fee < minTxFee {
+		return fmt.Errorf("fee below minimum of %d", minTxFee)
+	}
+	if tx.Amount > ^uint64(0)-tx.Fee {
+		return errors.New("amount plus fee overflows")
 	}
 	publicKey, err := hex.DecodeString(tx.PublicKey)
 	if err != nil || len(publicKey) != ed25519.PublicKeySize {
@@ -128,40 +211,134 @@ func blockHash(block Block) string {
 		PreviousHash string        `json:"previousHash"`
 		Miner        string        `json:"miner"`
 		Transactions []Transaction `json:"transactions"`
+		Difficulty   uint8         `json:"difficulty"`
 		Nonce        uint64        `json:"nonce"`
-	}{block.Index, block.Timestamp, block.PreviousHash, block.Miner, block.Transactions, block.Nonce})
+	}{block.Index, block.Timestamp, block.PreviousHash, block.Miner, block.Transactions, block.Difficulty, block.Nonce})
 	sum := sha256.Sum256(data)
 	return hex.EncodeToString(sum[:])
 }
 
-func (n *Node) loadChain(chain []Block) error {
+// checkBlock validates block as the successor of chain and applies it to balances and nonces.
+func checkBlock(chain []Block, block Block, balances, nonces map[string]uint64) error {
+	previous := chain[len(chain)-1]
+	if block.Index != previous.Index+1 || block.PreviousHash != previous.Hash {
+		return errors.New("block does not extend its predecessor")
+	}
+	if block.Difficulty != expectedDifficulty(chain) {
+		return errors.New("wrong difficulty for this height")
+	}
+	if block.Hash != blockHash(block) || leadingZeroBits(block.Hash) < int(block.Difficulty) {
+		return errors.New("invalid proof of work")
+	}
+	if !validAddress(block.Miner) {
+		return errors.New("invalid miner address")
+	}
+	if block.Timestamp < previous.Timestamp || block.Timestamp > time.Now().Add(maxClockDrift).UnixMilli() {
+		return errors.New("invalid block timestamp")
+	}
+	if len(block.Transactions) > maxBlockTransactions {
+		return errors.New("too many transactions in block")
+	}
+	payout := blockSubsidy(block.Index)
+	for _, tx := range block.Transactions {
+		if err := applyTransaction(tx, balances, nonces); err != nil {
+			return fmt.Errorf("invalid transaction: %w", err)
+		}
+		payout += tx.Fee
+	}
+	if balances[block.Miner] > ^uint64(0)-payout {
+		return errors.New("miner balance overflow")
+	}
+	balances[block.Miner] += payout
+	return nil
+}
+
+// validateChain fully verifies a chain from genesis and returns the resulting account state.
+func validateChain(chain []Block) (map[string]uint64, map[string]uint64, error) {
 	if len(chain) == 0 || !equalBlocks(chain[0], genesisBlock()) {
-		return errors.New("missing or invalid genesis block")
+		return nil, nil, errors.New("missing or invalid genesis block")
 	}
 	balances := make(map[string]uint64)
 	nonces := make(map[string]uint64)
 	for i := 1; i < len(chain); i++ {
-		block := chain[i]
-		previous := chain[i-1]
-		if block.Index != uint64(i) || block.PreviousHash != previous.Hash ||
-			block.Hash != blockHash(block) || !strings.HasPrefix(block.Hash, difficulty) ||
-			!validAddress(block.Miner) {
-			return fmt.Errorf("invalid block %d", i)
+		if err := checkBlock(chain[:i], chain[i], balances, nonces); err != nil {
+			return nil, nil, fmt.Errorf("invalid block %d: %w", i, err)
 		}
-		for _, tx := range block.Transactions {
-			if err := applyTransaction(tx, balances, nonces); err != nil {
-				return fmt.Errorf("invalid transaction in block %d: %w", i, err)
-			}
-		}
-		if balances[block.Miner] > ^uint64(0)-blockReward {
-			return fmt.Errorf("reward overflow in block %d", i)
-		}
-		balances[block.Miner] += blockReward
+	}
+	return balances, nonces, nil
+}
+
+func (n *Node) loadChain(chain []Block) error {
+	balances, nonces, err := validateChain(chain)
+	if err != nil {
+		return err
 	}
 	n.chain = append([]Block(nil), chain...)
 	n.balances = balances
 	n.nonces = nonces
 	return nil
+}
+
+// adopt installs an already-validated chain, persists it, and keeps still-valid pending transactions.
+func (n *Node) adopt(chain []Block, balances, nonces map[string]uint64) error {
+	if err := n.persist(chain); err != nil {
+		return err
+	}
+	n.chain = chain
+	n.balances = balances
+	n.nonces = nonces
+
+	pendingBalances := cloneBalances(balances)
+	pendingNonces := cloneBalances(nonces)
+	var kept []Transaction
+	for _, tx := range n.pending {
+		if applyTransaction(tx, pendingBalances, pendingNonces) == nil {
+			kept = append(kept, tx)
+		}
+	}
+	n.pending = kept
+	return nil
+}
+
+var (
+	errKnownBlock   = errors.New("block already known")
+	errNotExtending = errors.New("block does not extend the current chain tip")
+)
+
+// receiveBlock accepts a block from a peer only if it extends the current tip.
+func (n *Node) receiveBlock(block Block) error {
+	n.mu.Lock()
+	defer n.mu.Unlock()
+	tip := n.chain[len(n.chain)-1]
+	if block.Hash == tip.Hash {
+		return errKnownBlock
+	}
+	if block.Index != tip.Index+1 || block.PreviousHash != tip.Hash {
+		return errNotExtending
+	}
+	balances := cloneBalances(n.balances)
+	nonces := cloneBalances(n.nonces)
+	if err := checkBlock(n.chain, block, balances, nonces); err != nil {
+		return err
+	}
+	return n.adopt(append(append([]Block{}, n.chain...), block), balances, nonces)
+}
+
+// replaceChain adopts a fully valid chain with strictly more cumulative work than the current one.
+func (n *Node) replaceChain(chain []Block) (bool, error) {
+	balances, nonces, err := validateChain(chain)
+	if err != nil {
+		return false, err
+	}
+	n.mu.Lock()
+	defer n.mu.Unlock()
+	if chainWork(chain).Cmp(chainWork(n.chain)) <= 0 {
+		return false, nil
+	}
+	if err := n.adopt(append([]Block(nil), chain...), balances, nonces); err != nil {
+		return false, err
+	}
+	return true, nil
 }
 
 func equalBlocks(a, b Block) bool {
@@ -177,13 +354,13 @@ func applyTransaction(tx Transaction, balances, nonces map[string]uint64) error 
 	if tx.Nonce != nonces[tx.From]+1 {
 		return errors.New("incorrect transaction nonce")
 	}
-	if balances[tx.From] < tx.Amount {
+	if balances[tx.From] < tx.Amount+tx.Fee {
 		return errors.New("insufficient balance")
 	}
 	if balances[tx.To] > ^uint64(0)-tx.Amount {
 		return errors.New("recipient balance overflow")
 	}
-	balances[tx.From] -= tx.Amount
+	balances[tx.From] -= tx.Amount + tx.Fee
 	balances[tx.To] += tx.Amount
 	nonces[tx.From] = tx.Nonce
 	return nil
@@ -201,6 +378,9 @@ func (n *Node) addTransaction(tx Transaction) error {
 		if err := applyTransaction(pending, balances, nonces); err != nil {
 			return errors.New("pending transaction state is invalid")
 		}
+	}
+	if len(n.pending) >= maxPendingTransactions {
+		return errors.New("transaction pool is full")
 	}
 	if err := applyTransaction(tx, balances, nonces); err != nil {
 		return err
@@ -221,44 +401,45 @@ func (n *Node) mine(miner string) (Block, error) {
 	if !validAddress(miner) {
 		return Block{}, errors.New("invalid miner address")
 	}
+	// Search for the proof of work without holding the lock so the node stays responsive.
 	n.mu.Lock()
-	defer n.mu.Unlock()
 	previous := n.chain[len(n.chain)-1]
 	block := Block{
 		Index:        uint64(len(n.chain)),
-		Timestamp:    time.Now().UnixMilli(),
 		PreviousHash: previous.Hash,
 		Miner:        miner,
 		Transactions: append([]Transaction{}, n.pending...),
+		Difficulty:   expectedDifficulty(n.chain),
+	}
+	n.mu.Unlock()
+	if len(block.Transactions) > maxBlockTransactions {
+		block.Transactions = block.Transactions[:maxBlockTransactions]
+	}
+	block.Timestamp = time.Now().UnixMilli()
+	if block.Timestamp < previous.Timestamp {
+		block.Timestamp = previous.Timestamp
 	}
 	for {
 		block.Hash = blockHash(block)
-		if strings.HasPrefix(block.Hash, difficulty) {
+		if leadingZeroBits(block.Hash) >= int(block.Difficulty) {
 			break
 		}
 		block.Nonce++
 	}
 
+	n.mu.Lock()
+	defer n.mu.Unlock()
+	if n.chain[len(n.chain)-1].Hash != previous.Hash {
+		return Block{}, errors.New("chain advanced while mining; try again")
+	}
 	balances := cloneBalances(n.balances)
 	nonces := cloneBalances(n.nonces)
-	for _, tx := range block.Transactions {
-		if err := applyTransaction(tx, balances, nonces); err != nil {
-			return Block{}, fmt.Errorf("pending transaction became invalid: %w", err)
-		}
-	}
-	if balances[miner] > ^uint64(0)-blockReward {
-		return Block{}, errors.New("miner balance overflow")
-	}
-	balances[miner] += blockReward
-
-	nextChain := append(append([]Block{}, n.chain...), block)
-	if err := n.persist(nextChain); err != nil {
+	if err := checkBlock(n.chain, block, balances, nonces); err != nil {
 		return Block{}, err
 	}
-	n.chain = nextChain
-	n.balances = balances
-	n.nonces = nonces
-	n.pending = nil
+	if err := n.adopt(append(append([]Block{}, n.chain...), block), balances, nonces); err != nil {
+		return Block{}, err
+	}
 	return block, nil
 }
 

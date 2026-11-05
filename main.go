@@ -15,7 +15,9 @@ import (
 )
 
 type server struct {
-	node *Node
+	node  *Node
+	peers *peerSet
+	self  string
 }
 
 func (s *server) routes() http.Handler {
@@ -23,8 +25,11 @@ func (s *server) routes() http.Handler {
 	mux.HandleFunc("GET /api/health", s.health)
 	mux.HandleFunc("GET /api/chain", s.chain)
 	mux.HandleFunc("GET /api/balance", s.balance)
+	mux.HandleFunc("GET /api/peers", s.listPeers)
+	mux.HandleFunc("POST /api/peers", s.addPeer)
 	mux.HandleFunc("POST /api/wallet/new", s.newWallet)
 	mux.HandleFunc("POST /api/transactions", s.addTransaction)
+	mux.HandleFunc("POST /api/blocks", s.receiveBlock)
 	mux.HandleFunc("POST /api/mine", s.mine)
 	return mux
 }
@@ -78,7 +83,11 @@ func (s *server) newWallet(w http.ResponseWriter, _ *http.Request) {
 }
 
 func decodeBody(w http.ResponseWriter, r *http.Request, destination any) bool {
-	r.Body = http.MaxBytesReader(w, r.Body, 64*1024)
+	return decodeLimitedBody(w, r, destination, 64*1024)
+}
+
+func decodeLimitedBody(w http.ResponseWriter, r *http.Request, destination any, limit int64) bool {
+	r.Body = http.MaxBytesReader(w, r.Body, limit)
 	decoder := json.NewDecoder(r.Body)
 	decoder.DisallowUnknownFields()
 	if err := decoder.Decode(destination); err != nil {
@@ -97,7 +106,47 @@ func (s *server) addTransaction(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
+	s.peers.broadcast("/api/transactions", tx)
 	writeJSON(w, http.StatusAccepted, map[string]string{"status": "pending"})
+}
+
+func (s *server) receiveBlock(w http.ResponseWriter, r *http.Request) {
+	var block Block
+	if !decodeLimitedBody(w, r, &block, 1<<20) {
+		return
+	}
+	switch err := s.node.receiveBlock(block); {
+	case err == nil:
+		s.peers.broadcast("/api/blocks", block)
+		writeJSON(w, http.StatusAccepted, map[string]string{"status": "accepted"})
+	case errors.Is(err, errKnownBlock):
+		writeJSON(w, http.StatusOK, map[string]string{"status": "known"})
+	case errors.Is(err, errNotExtending):
+		go s.syncOnce()
+		writeError(w, http.StatusConflict, err.Error())
+	default:
+		writeError(w, http.StatusBadRequest, err.Error())
+	}
+}
+
+func (s *server) listPeers(w http.ResponseWriter, _ *http.Request) {
+	writeJSON(w, http.StatusOK, map[string]any{"peers": s.peers.list()})
+}
+
+func (s *server) addPeer(w http.ResponseWriter, r *http.Request) {
+	var request struct {
+		URL string `json:"url"`
+	}
+	if !decodeBody(w, r, &request) {
+		return
+	}
+	peer, err := s.peers.add(request.URL, s.self)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	go s.syncOnce()
+	writeJSON(w, http.StatusCreated, map[string]string{"peer": peer})
 }
 
 func (s *server) mine(w http.ResponseWriter, r *http.Request) {
@@ -112,7 +161,8 @@ func (s *server) mine(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	writeJSON(w, http.StatusCreated, map[string]any{"block": block, "reward": blockReward})
+	s.peers.broadcast("/api/blocks", block)
+	writeJSON(w, http.StatusCreated, map[string]any{"block": block, "reward": blockSubsidy(block.Index)})
 }
 
 func main() {
@@ -132,13 +182,23 @@ func main() {
 	if err != nil {
 		log.Fatalf("invalid ROCKY_ADDR: %v", err)
 	}
-	ip := net.ParseIP(strings.Trim(host, "[]"))
-	if host != "localhost" && (ip == nil || !ip.IsLoopback()) {
+	if !isLoopbackHost(host) {
 		log.Fatal(errors.New("this prototype only permits loopback binding"))
 	}
+	app := &server{node: node, peers: newPeerSet(), self: "http://" + address}
+	for _, raw := range strings.Split(os.Getenv("ROCKY_PEERS"), ",") {
+		if strings.TrimSpace(raw) == "" {
+			continue
+		}
+		if _, err := app.peers.add(raw, app.self); err != nil {
+			log.Fatalf("invalid ROCKY_PEERS entry %q: %v", raw, err)
+		}
+	}
+	app.syncOnce()
+	go app.syncLoop()
 	httpServer := &http.Server{
 		Addr:              address,
-		Handler:           (&server{node: node}).routes(),
+		Handler:           app.routes(),
 		ReadHeaderTimeout: 5 * time.Second,
 		ReadTimeout:       10 * time.Second,
 		WriteTimeout:      30 * time.Second,

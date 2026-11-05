@@ -21,6 +21,7 @@ func signedTransaction(privateKey ed25519.PrivateKey, publicKey ed25519.PublicKe
 		From:      from,
 		To:        to,
 		Amount:    amount,
+		Fee:       minTxFee,
 		Nonce:     nonce,
 		PublicKey: hex.EncodeToString(publicKey),
 	}
@@ -57,7 +58,7 @@ func TestLocalTestnetTransferAndPersistence(t *testing.T) {
 	if len(chain) != 3 || len(pending) != 0 {
 		t.Fatalf("unexpected chain/pending lengths: %d/%d", len(chain), len(pending))
 	}
-	if balances[sender] != 30 || balances[recipient] != 20 || balances[miner] != blockReward {
+	if balances[sender] != 29 || balances[recipient] != 20 || balances[miner] != initialBlockReward+minTxFee {
 		t.Fatalf("unexpected balances: %#v", balances)
 	}
 
@@ -66,8 +67,8 @@ func TestLocalTestnetTransferAndPersistence(t *testing.T) {
 		t.Fatal(err)
 	}
 	reloadedChain, reloadedBalances, _ := reloaded.snapshot()
-	if len(reloadedChain) != len(chain) || reloadedBalances[sender] != 30 ||
-		reloadedBalances[recipient] != 20 || reloadedBalances[miner] != blockReward {
+	if len(reloadedChain) != len(chain) || reloadedBalances[sender] != 29 ||
+		reloadedBalances[recipient] != 20 || reloadedBalances[miner] != initialBlockReward+minTxFee {
 		t.Fatalf("reloaded chain state differs: %#v", reloadedBalances)
 	}
 }
