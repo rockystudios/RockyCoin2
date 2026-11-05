@@ -38,3 +38,18 @@ ROCKY_ADDR=127.0.0.1:8082 ROCKY_DATA_FILE=b.json ROCKY_PEERS=http://127.0.0.1:80
 New transactions and mined blocks are broadcast to peers. A block that extends a node's tip is verified (proof of work, timestamps, signatures, nonces, balances) and appended. Every ten seconds, and whenever a peer announces a block that does not fit, a node downloads peer chains, fully re-validates them from genesis, and adopts the chain with the most cumulative work, so forks resolve by reorganization. Pending transactions that stay valid are kept across a reorganization. Peer URLs are limited to loopback HTTP origins.
 
 This is a prototype, not an audited blockchain implementation. It has no automatic peer discovery, authenticated API, faucet controls, or production key management. The loopback-only server restriction is intentional. See the "Known gaps" list in [PROTOCOL.md](PROTOCOL.md): a public testnet still needs hardened peer-to-peer networking, independent miners and nodes, wallet software, hosting and monitoring, an independent security audit, and legal review.
+## Web miner (Supabase ledger)
+
+`index.html` is a browser miner. A Web Worker searches for a SHA-256 hash of
+`wallet:tip:nonce` with leading zeros and submits it to Supabase, which verifies
+the proof, assigns a random reward (1-10 ROCKY) and stores the coin with its hash.
+Mining only runs while the tab is open.
+
+Setup:
+1. Run `supabase/schema.sql` in the Supabase SQL editor.
+2. Put the project URL and anon/publishable key in `CONFIG` at the top of the
+   second `<script>` in `index.html`. Never use the `service_role` key.
+3. Tune `difficulty` and `min_seconds_between_coins` in the `chain_state` table.
+
+The ledger is centralized in Supabase, addresses are public identifiers (no
+signatures or transfers), and ROCKY has no monetary value.
