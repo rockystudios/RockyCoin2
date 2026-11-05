@@ -3,15 +3,24 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta name="theme-color" content="#101b2b">
-  <title>RockyCoin — Local Blockchain</title>
+  <meta name="theme-color" content="#05070d">
+  <title>RockyCoin — Mine ROCKY</title>
   <style>
     :root {
       color-scheme: dark;
-      font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-      background: #101b2b;
-      color: #eef4fa;
-      font-synthesis: none;
+      --bg: #05070d;
+      --panel: rgb(13 19 32 / 86%);
+      --line: #1e2c44;
+      --text: #e6edf7;
+      --muted: #7f90aa;
+      --green: #37f2a5;
+      --cyan: #3cc8ff;
+      --violet: #8f6bff;
+      --gold: #ffcf4a;
+      --red: #ff6b7a;
+      font-family: Inter, ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+      background: var(--bg);
+      color: var(--text);
     }
 
     * { box-sizing: border-box; }
@@ -19,486 +28,772 @@
     body {
       margin: 0;
       min-width: 320px;
+      min-height: 100vh;
       background:
-        radial-gradient(ellipse at 82% 0%, #233e59 0, transparent 38rem),
-        #101b2b;
+        radial-gradient(ellipse 60rem 30rem at 85% -10%, rgb(143 107 255 / 22%), transparent),
+        radial-gradient(ellipse 50rem 28rem at 0% 0%, rgb(55 242 165 / 14%), transparent),
+        linear-gradient(rgb(60 200 255 / 4%) 1px, transparent 1px) 0 0 / 44px 44px,
+        linear-gradient(90deg, rgb(60 200 255 / 4%) 1px, transparent 1px) 0 0 / 44px 44px,
+        var(--bg);
     }
 
-    button, select { font: inherit; }
+    .mono { font-family: ui-monospace, "SF Mono", "JetBrains Mono", Menlo, Consolas, monospace; }
+    .shell { width: min(1180px, calc(100% - 2rem)); margin: 0 auto; padding: 1.5rem 0 3rem; }
 
-    button {
-      min-height: 42px;
-      padding: 0.65rem 1rem;
-      border: 1px solid #425a72;
-      border-radius: 9px;
-      background: #23384e;
-      color: #f4f8fc;
-      font-weight: 650;
-      cursor: pointer;
-    }
+    header { display: flex; align-items: center; justify-content: space-between; gap: 1rem; margin-bottom: 1.5rem; }
+    .brand { display: flex; align-items: center; gap: 0.8rem; }
 
-    button:hover:not(:disabled) { background: #304b66; }
-    button:disabled { opacity: 0.5; cursor: not-allowed; }
-    button:focus-visible, select:focus-visible { outline: 2px solid #75d7b2; outline-offset: 2px; }
-
-    .primary {
-      border-color: #69d6ad;
-      background: #62cba3;
-      color: #10251f;
-    }
-
-    .primary:hover:not(:disabled) { background: #82e3bf; }
-
-    .shell { width: min(1120px, calc(100% - 2rem)); margin: 0 auto; padding: 2.5rem 0 3rem; }
-
-    header { display: flex; align-items: center; gap: 1rem; margin-bottom: 2rem; }
-
-    .brand-mark {
+    .logo {
       display: grid;
-      width: 52px;
-      height: 52px;
+      width: 46px;
+      height: 46px;
       place-items: center;
-      border: 1px solid #6bd2ab;
-      border-radius: 16px;
-      color: #83e0bb;
-      font-size: 1.65rem;
-      font-weight: 800;
-      transform: rotate(-5deg);
+      clip-path: polygon(50% 0, 100% 25%, 100% 75%, 50% 100%, 0 75%, 0 25%);
+      background: linear-gradient(135deg, var(--green), var(--cyan) 55%, var(--violet));
+      color: #04100b;
+      font-size: 1.35rem;
+      font-weight: 900;
     }
 
-    h1 { margin: 0; font-size: clamp(1.7rem, 4vw, 2.4rem); letter-spacing: -0.04em; }
-    .subtitle { margin: 0.25rem 0 0; color: #a7b7c8; }
-    .eyebrow { color: #7edbb6; font-size: 0.72rem; font-weight: 800; letter-spacing: 0.14em; text-transform: uppercase; }
+    h1 { margin: 0; font-size: 1.35rem; letter-spacing: 0.04em; }
+    .tag { color: var(--muted); font-size: 0.78rem; letter-spacing: 0.12em; text-transform: uppercase; }
 
-    .notice {
-      margin-bottom: 1.25rem;
-      padding: 0.9rem 1rem;
-      border: 1px solid #655633;
-      border-radius: 10px;
-      background: #302a1d;
-      color: #f2d896;
-      line-height: 1.5;
+    .pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.5rem;
+      padding: 0.4rem 0.8rem;
+      border: 1px solid var(--line);
+      border-radius: 999px;
+      background: var(--panel);
+      color: var(--muted);
+      font-size: 0.8rem;
     }
 
-    .notice strong { color: #ffe4a3; }
-    .grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 1rem; }
+    .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--muted); }
+    .pill[data-state="live"] { color: var(--green); border-color: rgb(55 242 165 / 40%); }
+    .pill[data-state="live"] .dot { background: var(--green); box-shadow: 0 0 10px var(--green); animation: pulse 1.6s infinite; }
+    .pill[data-state="error"] { color: var(--red); border-color: rgb(255 107 122 / 40%); }
+    .pill[data-state="error"] .dot { background: var(--red); }
 
-    .card {
-      min-width: 0;
-      padding: 1.35rem;
-      border: 1px solid #34485c;
-      border-radius: 15px;
-      background: rgb(25 40 57 / 92%);
-      box-shadow: 0 12px 30px rgb(0 0 0 / 12%);
-    }
+    @keyframes pulse { 50% { opacity: 0.35; } }
 
-    .card h2 { margin: 0 0 1.15rem; font-size: 1.05rem; }
-    .wallet-card, .mining-card { min-height: 245px; }
-    .field-label { display: block; margin-bottom: 0.45rem; color: #a7b7c8; font-size: 0.85rem; }
-
-    select {
-      width: 100%;
-      min-height: 43px;
-      padding: 0.6rem 0.75rem;
-      border: 1px solid #425a72;
-      border-radius: 8px;
-      background: #142235;
-      color: #eef4fa;
-    }
-
-    .address-box {
-      overflow-wrap: anywhere;
-      margin: 1rem 0;
-      padding: 0.8rem;
-      border: 1px solid #34485c;
-      border-radius: 8px;
-      background: #142235;
-      color: #b7c8d8;
-      font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-      font-size: 0.78rem;
-      line-height: 1.5;
-    }
-
-    .balance { margin: 1rem 0 0.25rem; font-size: clamp(2rem, 5vw, 2.7rem); font-weight: 750; letter-spacing: -0.05em; }
-    .coin { color: #82e0ba; font-size: 1rem; letter-spacing: 0; }
-    .muted, .hint { color: #a7b7c8; font-size: 0.88rem; line-height: 1.5; }
-    .button-row { display: flex; flex-wrap: wrap; gap: 0.65rem; }
-
-    .mine-status {
-      min-height: 3.2rem;
-      margin: 1.15rem 0 0.7rem;
-      color: #b7c8d8;
+    .banner {
+      margin-bottom: 1rem;
+      padding: 0.85rem 1rem;
+      border: 1px solid rgb(255 107 122 / 45%);
+      border-radius: 12px;
+      background: rgb(255 107 122 / 9%);
+      color: #ffb3bc;
       font-size: 0.9rem;
       line-height: 1.5;
     }
 
-    progress { width: 100%; height: 8px; accent-color: #73d8b2; }
+    .banner[hidden] { display: none; }
 
-    .stats { display: grid; grid-template-columns: repeat(2, 1fr); gap: 0.75rem; margin-top: 1rem; }
-    .stat { padding: 0.8rem; border-radius: 9px; background: #142235; }
-    .stat-label { display: block; margin-bottom: 0.3rem; color: #a7b7c8; font-size: 0.75rem; }
-    .stat-value { font-size: 1.08rem; font-weight: 700; }
+    .stats { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 0.8rem; margin-bottom: 1rem; }
 
-    .chain-card { grid-column: 1 / -1; }
-    .chain-heading { display: flex; justify-content: space-between; align-items: center; gap: 1rem; }
-    .chain-list { display: grid; gap: 0.65rem; margin: 0; padding: 0; list-style: none; }
-    .block { display: grid; grid-template-columns: minmax(80px, 0.5fr) minmax(0, 2fr) minmax(95px, 0.7fr); gap: 1rem; align-items: center; padding: 0.85rem; border: 1px solid #34485c; border-radius: 9px; }
-    .block-number { font-weight: 700; }
-    .block-detail { min-width: 0; color: #a7b7c8; font-size: 0.82rem; overflow-wrap: anywhere; }
-    .block-reward { color: #82e0ba; font-size: 0.88rem; text-align: right; white-space: nowrap; }
-    .empty { padding: 1.25rem; border: 1px dashed #425a72; border-radius: 9px; color: #a7b7c8; text-align: center; }
-    #app-status { min-height: 1.5rem; margin: 1rem 0 0; color: #b7c8d8; font-size: 0.85rem; }
-    #app-status[data-kind="error"] { color: #ffaaa3; }
-    #app-status[data-kind="success"] { color: #82e0ba; }
-
-    @media (max-width: 720px) {
-      .shell { padding-top: 1.5rem; }
-      .grid { grid-template-columns: 1fr; }
-      .chain-card { grid-column: auto; }
-      .wallet-card, .mining-card { min-height: auto; }
-      .block { grid-template-columns: 1fr auto; gap: 0.4rem 0.8rem; }
-      .block-detail { grid-column: 1 / -1; grid-row: 2; }
-      .block-reward { grid-column: 2; grid-row: 1; }
+    .card {
+      min-width: 0;
+      padding: 1.15rem;
+      border: 1px solid var(--line);
+      border-radius: 16px;
+      background: var(--panel);
+      backdrop-filter: blur(8px);
     }
+
+    .label { color: var(--muted); font-size: 0.72rem; letter-spacing: 0.12em; text-transform: uppercase; }
+    .value { margin-top: 0.35rem; font-size: clamp(1.4rem, 3vw, 1.9rem); font-weight: 750; letter-spacing: -0.02em; }
+    .value small { color: var(--green); font-size: 0.8rem; font-weight: 700; letter-spacing: 0.04em; }
+    .grad { background: linear-gradient(90deg, var(--green), var(--cyan)); -webkit-background-clip: text; background-clip: text; color: transparent; }
+
+    .grid { display: grid; grid-template-columns: 1.35fr 1fr; gap: 1rem; }
+    .stack { display: grid; gap: 1rem; align-content: start; min-width: 0; }
+    h2 { margin: 0 0 0.9rem; font-size: 0.95rem; letter-spacing: 0.06em; text-transform: uppercase; }
+
+    button {
+      min-height: 44px;
+      padding: 0.65rem 1.1rem;
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      background: #121c30;
+      color: var(--text);
+      font: inherit;
+      font-weight: 650;
+      cursor: pointer;
+    }
+
+    button:hover:not(:disabled) { border-color: var(--cyan); }
+    button:disabled { opacity: 0.45; cursor: not-allowed; }
+    button:focus-visible { outline: 2px solid var(--cyan); outline-offset: 2px; }
+
+    .mine-btn {
+      width: 100%;
+      min-height: 56px;
+      border: 0;
+      background: linear-gradient(90deg, var(--green), var(--cyan));
+      color: #04120d;
+      font-size: 1.05rem;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+    }
+
+    .mine-btn:hover:not(:disabled) { filter: brightness(1.1); }
+    .mine-btn[data-active="true"] { background: linear-gradient(90deg, #ff8a7a, var(--red)); }
+
+    .stream {
+      height: 205px;
+      margin: 1rem 0;
+      padding: 0.8rem;
+      overflow: hidden;
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      background: #070b14;
+      font-size: 0.72rem;
+      line-height: 1.55;
+      color: #4d5f7d;
+    }
+
+    .stream .zero { color: var(--green); font-weight: 700; }
+    .stream .row { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .stream .row:first-child { color: #9bb0d0; }
+
+    .meter { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 0.5rem 1rem; margin-bottom: 0.9rem; color: var(--muted); font-size: 0.82rem; }
+    .meter b { color: var(--text); }
+    .status { min-height: 1.4rem; margin: 0.8rem 0 0; color: var(--muted); font-size: 0.85rem; line-height: 1.5; }
+    .status[data-kind="error"] { color: var(--red); }
+    .status[data-kind="success"] { color: var(--green); }
+
+    .address {
+      margin: 0.5rem 0 0.8rem;
+      padding: 0.7rem;
+      overflow-wrap: anywhere;
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      background: #070b14;
+      color: var(--cyan);
+      font-size: 0.78rem;
+    }
+
+    .row-buttons { display: flex; flex-wrap: wrap; gap: 0.5rem; }
+    .row-buttons button { min-height: 38px; padding: 0.4rem 0.8rem; font-size: 0.85rem; }
+
+    .list { margin: 0; padding: 0; list-style: none; display: grid; gap: 0.5rem; }
+
+    .coin {
+      display: grid;
+      grid-template-columns: auto minmax(0, 1fr) auto;
+      gap: 0.2rem 0.8rem;
+      align-items: center;
+      padding: 0.65rem 0.75rem;
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      background: #0a1019;
+      font-size: 0.8rem;
+    }
+
+    .coin .h { color: var(--muted); }
+    .coin .amt { color: var(--gold); font-weight: 700; text-align: right; white-space: nowrap; }
+    .coin .sub { grid-column: 2 / -1; color: var(--muted); font-size: 0.72rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .coin.mine { border-color: rgb(55 242 165 / 45%); }
+    .empty { padding: 1rem; border: 1px dashed var(--line); border-radius: 10px; color: var(--muted); text-align: center; font-size: 0.85rem; }
+
+    .rank { display: grid; grid-template-columns: 1.5rem minmax(0, 1fr) auto; gap: 0.6rem; align-items: center; padding: 0.5rem 0; border-bottom: 1px solid var(--line); font-size: 0.82rem; }
+    .rank:last-child { border-bottom: 0; }
+    .rank .n { color: var(--muted); }
+    .rank .b { color: var(--gold); font-weight: 700; }
+
+    .toast {
+      position: fixed;
+      right: 1rem;
+      bottom: 1rem;
+      max-width: calc(100% - 2rem);
+      padding: 0.8rem 1rem;
+      border: 1px solid rgb(255 207 74 / 55%);
+      border-radius: 12px;
+      background: #1a1608;
+      color: var(--gold);
+      font-weight: 700;
+      box-shadow: 0 0 30px rgb(255 207 74 / 25%);
+      transition: opacity 0.3s, transform 0.3s;
+    }
+
+    .toast[hidden] { display: block; opacity: 0; transform: translateY(10px); pointer-events: none; }
+
+    footer { margin-top: 1.5rem; color: var(--muted); font-size: 0.8rem; line-height: 1.6; }
+    footer strong { color: #c9d6ea; }
+
+    @media (max-width: 860px) {
+      .stats { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+      .grid { grid-template-columns: 1fr; }
+    }
+
+    @media (prefers-reduced-motion: reduce) { .pill .dot { animation: none !important; } }
   </style>
 </head>
 <body>
   <main class="shell">
     <header>
-      <div class="brand-mark" aria-hidden="true">R</div>
-      <div>
-        <div class="eyebrow">Local blockchain demo</div>
-        <h1>RockyCoin</h1>
-        <p class="subtitle">Create a wallet. Mine a block. Explore your chain.</p>
+      <div class="brand">
+        <div class="logo" aria-hidden="true">R</div>
+        <div>
+          <h1>ROCKYCOIN</h1>
+          <div class="tag">Proof-of-work testnet</div>
+        </div>
       </div>
+      <span id="net-pill" class="pill" data-state="idle"><span class="dot"></span><span id="net-text">Connecting…</span></span>
     </header>
 
-    <aside class="notice" role="note">
-      <strong>Demo only:</strong> RockyCoin is stored in this browser and is not real money.
-      Wallet addresses are local identifiers, not secure keys. Clearing browser data removes your wallets and chain.
-    </aside>
+    <div id="setup-banner" class="banner" role="alert" hidden>
+      <strong>Supabase isn't configured yet.</strong> Add your project URL and anon (publishable) key to the <code>CONFIG</code> block in this page's script, and run <code>supabase/schema.sql</code> in the Supabase SQL editor. Mining is disabled until then.
+    </div>
+
+    <section class="stats" aria-label="Network statistics">
+      <div class="card"><div class="label">Your balance</div><div class="value grad mono"><span id="balance">0</span> <small>ROCKY</small></div></div>
+      <div class="card"><div class="label">Coins mined (network)</div><div class="value mono" id="height">0</div></div>
+      <div class="card"><div class="label">Difficulty</div><div class="value mono"><span id="difficulty">–</span> <small>zero digits</small></div></div>
+      <div class="card"><div class="label">Your hashrate</div><div class="value mono"><span id="hashrate">0</span> <small>H/s</small></div></div>
+    </section>
 
     <div class="grid">
-      <section class="card wallet-card" aria-labelledby="wallet-title">
-        <h2 id="wallet-title">Your wallet</h2>
-        <label class="field-label" for="wallet-select">Active wallet</label>
-        <select id="wallet-select" aria-label="Select active wallet"></select>
-        <div id="wallet-address" class="address-box">Create a wallet to get started.</div>
-        <div class="button-row">
-          <button id="create-wallet" class="primary" type="button">Create wallet</button>
-          <button id="copy-address" type="button" disabled>Copy address</button>
-        </div>
-        <p class="balance"><span id="wallet-balance">0</span> <span class="coin">ROCKY</span></p>
-        <p class="muted">Balance for the selected wallet</p>
-      </section>
+      <div class="stack">
+        <section class="card" aria-labelledby="miner-title">
+          <h2 id="miner-title">Miner</h2>
+          <button id="mine-btn" class="mine-btn" type="button" data-active="false" disabled>Start mining</button>
+          <div id="stream" class="stream mono" aria-hidden="true"></div>
+          <div class="meter">
+            <span>Session coins <b id="session-coins" class="mono">0</b></span>
+            <span>Session earned <b id="session-earned" class="mono">0</b> ROCKY</span>
+            <span>Threads <b id="threads" class="mono">1</b></span>
+          </div>
+          <div class="row-buttons">
+            <button id="threads-down" type="button" aria-label="Use fewer threads">− thread</button>
+            <button id="threads-up" type="button" aria-label="Use more threads">+ thread</button>
+          </div>
+          <p id="mine-status" class="status" aria-live="polite">Start mining to search for a valid hash. Coins arrive at random and pay 1–10 ROCKY each. Mining only runs while this tab stays open.</p>
+        </section>
 
-      <section class="card mining-card" aria-labelledby="mining-title">
-        <h2 id="mining-title">Mining</h2>
-        <p class="muted">Mine a block to the selected wallet. Each block currently rewards <strong>50 ROCKY</strong>.</p>
-        <div class="button-row">
-          <button id="mine-button" class="primary" type="button" disabled>Mine 50 ROCKY</button>
-          <button id="cancel-mining" type="button" hidden>Cancel</button>
-        </div>
-        <p id="mine-status" class="mine-status" aria-live="polite">Create a wallet before mining.</p>
-        <progress id="mine-progress" max="1" value="0" aria-label="Mining progress" hidden></progress>
-      </section>
+        <section class="card" aria-labelledby="ledger-title">
+          <h2 id="ledger-title">Latest coins</h2>
+          <ul id="ledger" class="list" aria-live="polite"></ul>
+        </section>
+      </div>
 
-      <section class="card chain-card" aria-labelledby="chain-title">
-        <div class="chain-heading">
-          <h2 id="chain-title">Local blockchain</h2>
-          <span class="eyebrow">Proof of work</span>
-        </div>
-        <div class="stats">
-          <div class="stat"><span class="stat-label">Blocks</span><span id="block-count" class="stat-value">1</span></div>
-          <div class="stat"><span class="stat-label">RockyCoin mined</span><span id="total-mined" class="stat-value">0 ROCKY</span></div>
-        </div>
-        <h2 style="margin-top: 1.4rem">Recent blocks</h2>
-        <ol id="chain-list" class="chain-list" aria-live="polite"></ol>
-        <p id="app-status" role="status" aria-live="polite"></p>
-      </section>
+      <div class="stack">
+        <section class="card" aria-labelledby="wallet-title">
+          <h2 id="wallet-title">Wallet</h2>
+          <div class="label">Your address</div>
+          <div id="address" class="address mono"></div>
+          <div class="row-buttons">
+            <button id="copy-btn" type="button">Copy</button>
+            <button id="import-btn" type="button">Use another address</button>
+            <button id="new-btn" type="button">New wallet</button>
+          </div>
+        </section>
+
+        <section class="card" aria-labelledby="board-title">
+          <h2 id="board-title">Top miners</h2>
+          <div id="board"></div>
+        </section>
+
+        <section class="card" aria-labelledby="chain-title">
+          <h2 id="chain-title">Chain tip</h2>
+          <div class="label">Latest coin hash</div>
+          <div id="tip" class="address mono"></div>
+        </section>
+      </div>
     </div>
+
+    <footer>
+      <p><strong>Testnet notice:</strong> ROCKY has no monetary value and is not for sale. Mined coins are recorded in a shared Supabase ledger, and the database verifies every hash before accepting a coin. Wallet addresses are public identifiers, not secure keys, and coins can't be transferred yet. Clearing your browser data removes your saved address, so copy it somewhere safe.</p>
+    </footer>
   </main>
+
+  <div id="toast" class="toast" hidden role="status" aria-live="polite"></div>
+
+  <script id="miner-worker" type="text/js-worker">
+    "use strict";
+    // Proof of work: SHA-256(wallet + ":" + tip + ":" + nonce) must start with `difficulty` zero hex digits.
+    const K = new Uint32Array([
+      0x428a2f98, 0x71374491, 0xb5c0fbcf, 0xe9b5dba5, 0x3956c25b, 0x59f111f1, 0x923f82a4, 0xab1c5ed5,
+      0xd807aa98, 0x12835b01, 0x243185be, 0x550c7dc3, 0x72be5d74, 0x80deb1fe, 0x9bdc06a7, 0xc19bf174,
+      0xe49b69c1, 0xefbe4786, 0x0fc19dc6, 0x240ca1cc, 0x2de92c6f, 0x4a7484aa, 0x5cb0a9dc, 0x76f988da,
+      0x983e5152, 0xa831c66d, 0xb00327c8, 0xbf597fc7, 0xc6e00bf3, 0xd5a79147, 0x06ca6351, 0x14292967,
+      0x27b70a85, 0x2e1b2138, 0x4d2c6dfc, 0x53380d13, 0x650a7354, 0x766a0abb, 0x81c2c92e, 0x92722c85,
+      0xa2bfe8a1, 0xa81a664b, 0xc24b8b70, 0xc76c51a3, 0xd192e819, 0xd6990624, 0xf40e3585, 0x106aa070,
+      0x19a4c116, 0x1e376c08, 0x2748774c, 0x34b0bcb5, 0x391c0cb3, 0x4ed8aa4a, 0x5b9cca4f, 0x682e6ff3,
+      0x748f82ee, 0x78a5636f, 0x84c87814, 0x8cc70208, 0x90befffa, 0xa4506ceb, 0xbef9a3f7, 0xc67178f2
+    ]);
+    const IV = new Uint32Array([0x6a09e667, 0xbb67ae85, 0x3c6ef372, 0xa54ff53a, 0x510e527f, 0x9b05688c, 0x1f83d9ab, 0x5be0cd19]);
+    const HEXCODES = new Uint8Array(16);
+    for (let i = 0; i < 16; i += 1) HEXCODES[i] = "0123456789abcdef".charCodeAt(i);
+    const BATCH = 4000;
+    const w = new Uint32Array(64);
+    const state = new Uint32Array(8);
+    let running = false;
+    let job = null;
+
+    function compress(s) {
+      for (let t = 16; t < 64; t += 1) {
+        const a = w[t - 15];
+        const b = w[t - 2];
+        const s0 = ((a >>> 7) | (a << 25)) ^ ((a >>> 18) | (a << 14)) ^ (a >>> 3);
+        const s1 = ((b >>> 17) | (b << 15)) ^ ((b >>> 19) | (b << 13)) ^ (b >>> 10);
+        w[t] = (w[t - 16] + s0 + w[t - 7] + s1) | 0;
+      }
+      let a = s[0], b = s[1], c = s[2], d = s[3], e = s[4], f = s[5], g = s[6], h = s[7];
+      for (let t = 0; t < 64; t += 1) {
+        const S1 = ((e >>> 6) | (e << 26)) ^ ((e >>> 11) | (e << 21)) ^ ((e >>> 25) | (e << 7));
+        const t1 = (h + S1 + ((e & f) ^ (~e & g)) + K[t] + w[t]) | 0;
+        const S0 = ((a >>> 2) | (a << 30)) ^ ((a >>> 13) | (a << 19)) ^ ((a >>> 22) | (a << 10));
+        const t2 = (S0 + ((a & b) ^ (a & c) ^ (b & c))) | 0;
+        h = g; g = f; f = e; e = (d + t1) | 0; d = c; c = b; b = a; a = (t1 + t2) | 0;
+      }
+      s[0] = (s[0] + a) | 0; s[1] = (s[1] + b) | 0; s[2] = (s[2] + c) | 0; s[3] = (s[3] + d) | 0;
+      s[4] = (s[4] + e) | 0; s[5] = (s[5] + f) | 0; s[6] = (s[6] + g) | 0; s[7] = (s[7] + h) | 0;
+    }
+
+    function wordsToHex(words) {
+      let out = "";
+      for (let i = 0; i < 8; i += 1) out += (words[i] >>> 0).toString(16).padStart(8, "0");
+      return out;
+    }
+
+    function randomPrefix() {
+      const bytes = new Uint8Array(4);
+      crypto.getRandomValues(bytes);
+      let text = "";
+      for (const byte of bytes) text += byte.toString(16).padStart(2, "0");
+      return text;
+    }
+
+    // The 124-byte message is wallet(42) ":" tip(64) ":" nonce(16), so SHA-256 pads it to 3 blocks.
+    // Block 0 never changes, so its result is computed once; blocks 1 and 2 are rebuilt per attempt.
+    function buildJob(wallet, tip, difficulty) {
+      if (!/^RC[a-f0-9]{40}$/.test(wallet) || !/^[a-f0-9]{64}$/.test(tip)) throw new Error("bad job");
+      const d = Math.min(Math.max(difficulty | 0, 1), 8);
+      const bytes = new Uint8Array(192);
+      const prefix = `${wallet}:${tip}:`;
+      for (let i = 0; i < prefix.length; i += 1) bytes[i] = prefix.charCodeAt(i);
+      bytes[124] = 0x80;
+      bytes[190] = 0x03;
+      bytes[191] = 0xe0;
+      const words = (offset) => {
+        const out = new Uint32Array(16);
+        for (let i = 0; i < 16; i += 1) {
+          const p = offset + i * 4;
+          out[i] = ((bytes[p] << 24) | (bytes[p + 1] << 16) | (bytes[p + 2] << 8) | bytes[p + 3]) >>> 0;
+        }
+        return out;
+      };
+      const mid = new Uint32Array(IV);
+      w.set(words(0));
+      compress(mid);
+      return { mid, block1: words(64), block2: words(128), shift: 32 - 4 * d, prefix: "", counter: 0 };
+    }
+
+    function setNoncePrefix(j) {
+      j.prefix = randomPrefix();
+      const c = (i) => j.prefix.charCodeAt(i);
+      j.block1[11] = ((c(0) << 24) | (c(1) << 16) | (c(2) << 8) | c(3)) >>> 0;
+      j.block1[12] = ((c(4) << 24) | (c(5) << 16) | (c(6) << 8) | c(7)) >>> 0;
+      j.counter = 0;
+    }
+
+    function step() {
+      if (!running) return;
+      const j = job;
+      const started = performance.now();
+      for (let i = 0; i < BATCH; i += 1) {
+        if (j.counter >= 0x100000000) setNoncePrefix(j);
+        const c = j.counter;
+        j.counter += 1;
+        j.block1[13] = ((HEXCODES[(c >>> 28) & 15] << 24) | (HEXCODES[(c >>> 24) & 15] << 16) | (HEXCODES[(c >>> 20) & 15] << 8) | HEXCODES[(c >>> 16) & 15]) >>> 0;
+        j.block1[14] = ((HEXCODES[(c >>> 12) & 15] << 24) | (HEXCODES[(c >>> 8) & 15] << 16) | (HEXCODES[(c >>> 4) & 15] << 8) | HEXCODES[c & 15]) >>> 0;
+        state.set(j.mid);
+        w.set(j.block1);
+        compress(state);
+        w.set(j.block2);
+        compress(state);
+        if ((state[0] >>> j.shift) === 0 && (j.shift < 32)) {
+          running = false;
+          self.postMessage({ type: "found", nonce: j.prefix + (c >>> 0).toString(16).padStart(8, "0"), hash: wordsToHex(state) });
+          return;
+        }
+      }
+      self.postMessage({ type: "stats", hashes: BATCH, ms: performance.now() - started, sample: wordsToHex(state) });
+      setTimeout(step, 0);
+    }
+
+    self.onmessage = (event) => {
+      const msg = event.data;
+      if (msg.type === "stop") {
+        running = false;
+      } else if (msg.type === "start") {
+        try {
+          job = buildJob(msg.wallet, msg.tip, msg.difficulty);
+        } catch (error) {
+          self.postMessage({ type: "error", message: String(error.message || error) });
+          return;
+        }
+        setNoncePrefix(job);
+        running = true;
+        step();
+      }
+    };
+  </script>
 
   <script>
     "use strict";
 
-    const STORAGE_KEY = "rockycoin.local-demo.v1";
-    const REWARD = 50;
-    const DIFFICULTY = 2;
-    const TARGET_PREFIX = "0".repeat(DIFFICULTY);
-    const GENESIS_BLOCK = {
-      index: 0,
-      timestamp: 0,
-      previousHash: "0",
-      miner: "RockyCoin",
-      reward: 0,
-      nonce: 0,
-      hash: "genesis"
+    // Paste your Supabase project URL and the anon / publishable key here.
+    // Both values are meant to be public: the database only lets visitors read the ledger and submit proofs of work.
+    const CONFIG = {
+      supabaseUrl: "",
+      supabaseKey: ""
     };
 
-    let state = { wallets: [], activeWalletId: null, chain: [GENESIS_BLOCK] };
-    let mining = false;
-    let cancelRequested = false;
+    const WALLET_KEY = "rockycoin.wallet.v2";
+    const MAX_THREADS = Math.min(Math.max((navigator.hardwareConcurrency || 2) - 1, 1), 4);
+    const POLL_MS = 4000;
+    const ADDRESS_PATTERN = /^RC[a-f0-9]{40}$/;
+    const configured = Boolean(CONFIG.supabaseUrl && CONFIG.supabaseKey);
 
-    const elements = {
-      walletSelect: document.querySelector("#wallet-select"),
-      walletAddress: document.querySelector("#wallet-address"),
-      walletBalance: document.querySelector("#wallet-balance"),
-      createWallet: document.querySelector("#create-wallet"),
-      copyAddress: document.querySelector("#copy-address"),
-      mineButton: document.querySelector("#mine-button"),
-      cancelMining: document.querySelector("#cancel-mining"),
-      mineStatus: document.querySelector("#mine-status"),
-      mineProgress: document.querySelector("#mine-progress"),
-      blockCount: document.querySelector("#block-count"),
-      totalMined: document.querySelector("#total-mined"),
-      chainList: document.querySelector("#chain-list"),
-      appStatus: document.querySelector("#app-status")
+    const state = {
+      wallet: "",
+      tip: "0".repeat(64),
+      height: 0,
+      difficulty: 6,
+      mining: false,
+      submitting: false,
+      threads: 1,
+      workers: [],
+      rates: new Map(),
+      sessionCoins: 0,
+      sessionEarned: 0,
+      stream: []
+    };
+
+    const $ = (id) => document.getElementById(id);
+    const el = {
+      pill: $("net-pill"), pillText: $("net-text"), banner: $("setup-banner"),
+      balance: $("balance"), height: $("height"), difficulty: $("difficulty"), hashrate: $("hashrate"),
+      mineBtn: $("mine-btn"), stream: $("stream"), sessionCoins: $("session-coins"),
+      sessionEarned: $("session-earned"), threads: $("threads"), status: $("mine-status"),
+      address: $("address"), tip: $("tip"), ledger: $("ledger"), board: $("board"), toast: $("toast")
     };
 
     function randomHex(byteCount) {
       const bytes = new Uint8Array(byteCount);
       crypto.getRandomValues(bytes);
-      return Array.from(bytes, (byte) => byte.toString(16).padStart(2, "0")).join("");
+      return Array.from(bytes, (b) => b.toString(16).padStart(2, "0")).join("");
     }
 
-    function blockPayload(block) {
-      return JSON.stringify([
-        block.index,
-        block.timestamp,
-        block.previousHash,
-        block.miner,
-        block.reward,
-        block.nonce
-      ]);
+    function saveWallet(address) {
+      try { localStorage.setItem(WALLET_KEY, address); } catch { /* storage unavailable */ }
     }
 
-    async function hashBlock(block) {
-      const bytes = new TextEncoder().encode(blockPayload(block));
-      const digest = await crypto.subtle.digest("SHA-256", bytes);
-      return Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, "0")).join("");
-    }
-
-    function setAppStatus(message, kind = "") {
-      elements.appStatus.textContent = message;
-      elements.appStatus.dataset.kind = kind;
-    }
-
-    function saveState() {
+    function loadWallet() {
       try {
-        localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
-        return true;
-      } catch {
-        setAppStatus("Could not save RockyCoin data in this browser. Check local storage settings.", "error");
-        return false;
-      }
+        const saved = localStorage.getItem(WALLET_KEY);
+        if (saved && ADDRESS_PATTERN.test(saved)) return saved;
+      } catch { /* storage unavailable */ }
+      const created = `RC${randomHex(20)}`;
+      saveWallet(created);
+      return created;
     }
 
-    function loadState() {
-      try {
-        const saved = JSON.parse(localStorage.getItem(STORAGE_KEY) || "null");
-        if (!saved || typeof saved !== "object") return;
-
-        const wallets = Array.isArray(saved.wallets) ? saved.wallets.filter((wallet) =>
-          wallet && typeof wallet.id === "string" && /^[a-f0-9]{24}$/.test(wallet.id) &&
-          typeof wallet.address === "string" && /^RC[a-f0-9]{40}$/.test(wallet.address)
-        ) : [];
-        state.wallets = wallets;
-        state.activeWalletId = wallets.some((wallet) => wallet.id === saved.activeWalletId)
-          ? saved.activeWalletId
-          : wallets[0]?.id || null;
-        state.chain = Array.isArray(saved.chain) ? saved.chain : [GENESIS_BLOCK];
-      } catch {
-        state = { wallets: [], activeWalletId: null, chain: [GENESIS_BLOCK] };
-        setAppStatus("Saved data could not be read, so a fresh local chain was started.", "error");
-      }
+    function shorten(text, head = 8, tail = 6) {
+      return text.length > head + tail + 1 ? `${text.slice(0, head)}…${text.slice(-tail)}` : text;
     }
 
-    async function validateChain(chain) {
-      if (!Array.isArray(chain) || chain.length === 0 || JSON.stringify(chain[0]) !== JSON.stringify(GENESIS_BLOCK)) {
-        return false;
-      }
-
-      for (let index = 1; index < chain.length; index += 1) {
-        const block = chain[index];
-        const previous = chain[index - 1];
-        if (!block || block.index !== index || block.previousHash !== previous.hash ||
-            typeof block.timestamp !== "number" || !Number.isFinite(block.timestamp) ||
-            typeof block.miner !== "string" || !/^RC[a-f0-9]{40}$/.test(block.miner) ||
-            block.reward !== REWARD || !Number.isSafeInteger(block.nonce) || block.nonce < 0 ||
-            typeof block.hash !== "string" || !block.hash.startsWith(TARGET_PREFIX)) {
-          return false;
-        }
-        if (await hashBlock(block) !== block.hash) return false;
-      }
-      return true;
+    function timeAgo(iso) {
+      const seconds = Math.max(0, Math.round((Date.now() - new Date(iso).getTime()) / 1000));
+      if (seconds < 60) return `${seconds}s ago`;
+      if (seconds < 3600) return `${Math.floor(seconds / 60)}m ago`;
+      if (seconds < 86400) return `${Math.floor(seconds / 3600)}h ago`;
+      return `${Math.floor(seconds / 86400)}d ago`;
     }
 
-    function activeWallet() {
-      return state.wallets.find((wallet) => wallet.id === state.activeWalletId) || null;
+    function setStatus(message, kind = "") {
+      el.status.textContent = message;
+      el.status.dataset.kind = kind;
     }
 
-    function balanceFor(address) {
-      return state.chain.reduce((total, block) => total + (block.miner === address ? block.reward : 0), 0);
+    function setNetwork(stateName, text) {
+      el.pill.dataset.state = stateName;
+      el.pillText.textContent = text;
     }
 
-    function render() {
-      const selectedWallet = activeWallet();
-      elements.walletSelect.replaceChildren();
+    let toastTimer = 0;
+    function toast(message) {
+      el.toast.textContent = message;
+      el.toast.hidden = false;
+      clearTimeout(toastTimer);
+      toastTimer = setTimeout(() => { el.toast.hidden = true; }, 4500);
+    }
 
-      if (state.wallets.length === 0) {
-        const option = document.createElement("option");
-        option.textContent = "No wallets yet";
-        option.value = "";
-        elements.walletSelect.append(option);
-        elements.walletSelect.disabled = true;
-      } else {
-        elements.walletSelect.disabled = mining;
-        for (const wallet of state.wallets) {
-          const option = document.createElement("option");
-          option.value = wallet.id;
-          option.textContent = `${wallet.address.slice(0, 10)}…${wallet.address.slice(-6)}`;
-          option.selected = wallet.id === state.activeWalletId;
-          elements.walletSelect.append(option);
-        }
-      }
+    async function api(path, options = {}) {
+      const headers = { apikey: CONFIG.supabaseKey, "Content-Type": "application/json", ...(options.headers || {}) };
+      if (CONFIG.supabaseKey.startsWith("eyJ")) headers.Authorization = `Bearer ${CONFIG.supabaseKey}`;
+      const response = await fetch(`${CONFIG.supabaseUrl.replace(/\/$/, "")}/rest/v1/${path}`, { ...options, headers });
+      const body = await response.json().catch(() => null);
+      if (!response.ok) throw new Error((body && body.message) || `Request failed (${response.status})`);
+      return body;
+    }
 
-      elements.walletAddress.textContent = selectedWallet
-        ? selectedWallet.address
-        : "Create a wallet to get started.";
-      elements.walletBalance.textContent = selectedWallet ? balanceFor(selectedWallet.address).toLocaleString() : "0";
-      elements.createWallet.disabled = mining;
-      elements.copyAddress.disabled = !selectedWallet || mining;
-      elements.mineButton.disabled = !selectedWallet || mining;
-      elements.cancelMining.hidden = !mining;
-      elements.blockCount.textContent = state.chain.length.toLocaleString();
-      const totalMined = state.chain.reduce((sum, block) => sum + block.reward, 0);
-      elements.totalMined.textContent = `${totalMined.toLocaleString()} ROCKY`;
+    function renderWallet() { el.address.textContent = state.wallet; }
 
-      elements.chainList.replaceChildren();
-      for (const block of state.chain.slice(1).reverse().slice(0, 10)) {
-        const item = document.createElement("li");
-        item.className = "block";
-        const number = document.createElement("span");
-        number.className = "block-number";
-        number.textContent = `Block #${block.index}`;
-        const detail = document.createElement("span");
-        detail.className = "block-detail";
-        detail.textContent = `Mined by ${block.miner} · ${new Date(block.timestamp).toLocaleString()}`;
-        const reward = document.createElement("span");
-        reward.className = "block-reward";
-        reward.textContent = `+${block.reward} ROCKY`;
-        item.append(number, detail, reward);
-        elements.chainList.append(item);
-      }
-      if (elements.chainList.childElementCount === 0) {
+    function renderChain() {
+      el.height.textContent = state.height.toLocaleString();
+      el.difficulty.textContent = String(state.difficulty);
+      el.tip.textContent = state.tip;
+    }
+
+    function renderSession() {
+      el.sessionCoins.textContent = state.sessionCoins.toLocaleString();
+      el.sessionEarned.textContent = state.sessionEarned.toLocaleString();
+      el.threads.textContent = String(state.threads);
+    }
+
+    function renderLedger(coins) {
+      el.ledger.replaceChildren();
+      if (!coins.length) {
         const empty = document.createElement("li");
         empty.className = "empty";
-        empty.textContent = "No blocks mined yet. Mine the first block to get started.";
-        elements.chainList.append(empty);
+        empty.textContent = "No coins mined yet. Be the first.";
+        el.ledger.append(empty);
+        return;
+      }
+      for (const coin of coins) {
+        const item = document.createElement("li");
+        item.className = `coin mono${coin.wallet === state.wallet ? " mine" : ""}`;
+        const height = document.createElement("span");
+        height.className = "h";
+        height.textContent = `#${coin.height}`;
+        const hash = document.createElement("span");
+        hash.textContent = shorten(coin.hash, 14, 8);
+        const reward = document.createElement("span");
+        reward.className = "amt";
+        reward.textContent = `+${coin.reward} ROCKY`;
+        const sub = document.createElement("span");
+        sub.className = "sub";
+        sub.textContent = `${coin.wallet === state.wallet ? "you" : shorten(coin.wallet, 10, 6)} · ${timeAgo(coin.created_at)}`;
+        item.append(height, hash, reward, sub);
+        el.ledger.append(item);
       }
     }
 
-    async function mineBlock() {
-      const wallet = activeWallet();
-      if (!wallet || mining) return;
-      mining = true;
-      cancelRequested = false;
-      elements.mineProgress.hidden = false;
-      elements.mineProgress.value = 0;
-      elements.mineStatus.textContent = `Searching for a valid hash (difficulty ${DIFFICULTY})…`;
-      render();
+    function renderBoard(rows) {
+      el.board.replaceChildren();
+      if (!rows.length) {
+        const empty = document.createElement("div");
+        empty.className = "empty";
+        empty.textContent = "No miners yet.";
+        el.board.append(empty);
+        return;
+      }
+      rows.forEach((row, index) => {
+        const line = document.createElement("div");
+        line.className = "rank mono";
+        const n = document.createElement("span");
+        n.className = "n";
+        n.textContent = String(index + 1);
+        const who = document.createElement("span");
+        who.textContent = row.wallet === state.wallet ? "you" : shorten(row.wallet, 10, 6);
+        const bal = document.createElement("span");
+        bal.className = "b";
+        bal.textContent = Number(row.balance).toLocaleString();
+        line.append(n, who, bal);
+        el.board.append(line);
+      });
+    }
 
-      const previous = state.chain[state.chain.length - 1];
-      const block = {
-        index: state.chain.length,
-        timestamp: Date.now(),
-        previousHash: previous.hash,
-        miner: wallet.address,
-        reward: REWARD,
-        nonce: 0,
-        hash: ""
-      };
+    function pushStream(hash) {
+      state.stream.unshift(hash);
+      state.stream.length = Math.min(state.stream.length, 12);
+      el.stream.replaceChildren();
+      for (const text of state.stream) {
+        const row = document.createElement("div");
+        row.className = "row";
+        const zeros = text.match(/^0*/)[0];
+        const zero = document.createElement("span");
+        zero.className = "zero";
+        zero.textContent = zeros;
+        row.append(zero, text.slice(zeros.length));
+        el.stream.append(row);
+      }
+    }
 
+    function renderHashrate() {
+      let total = 0;
+      for (const rate of state.rates.values()) total += rate;
+      el.hashrate.textContent = state.mining ? Math.round(total).toLocaleString() : "0";
+    }
+
+    async function refresh() {
+      if (!configured) return;
       try {
-        while (!cancelRequested) {
-          block.hash = await hashBlock(block);
-          if (block.hash.startsWith(TARGET_PREFIX)) {
-            state.chain.push(block);
-            saveState();
-            elements.mineStatus.textContent = `Block #${block.index} mined! ${REWARD} ROCKY added to your wallet.`;
-            elements.mineStatus.dataset.kind = "success";
-            setAppStatus("Your latest block is saved in this browser.", "success");
-            break;
-          }
-          block.nonce += 1;
-          if (block.nonce % 128 === 0) {
-            elements.mineStatus.textContent = `Trying nonce ${block.nonce.toLocaleString()}…`;
-            elements.mineProgress.value = (block.nonce % 2048) / 2048;
-            await new Promise((resolve) => setTimeout(resolve, 0));
-          }
-        }
-        if (cancelRequested) {
-          elements.mineStatus.textContent = "Mining cancelled. No block was added.";
-        }
-      } catch {
-        elements.mineStatus.textContent = "Mining failed. This browser may not support the Web Crypto API.";
-        setAppStatus("Use a modern browser and open RockyCoin from localhost to enable SHA-256 mining.", "error");
+        const [chain, coins, mine, board] = await Promise.all([
+          api("chain_state?id=eq.1&select=tip_hash,height,difficulty"),
+          api("mined_coins?select=height,wallet,hash,reward,created_at&order=height.desc&limit=8"),
+          api(`balances?wallet=eq.${state.wallet}&select=balance`),
+          api("balances?select=wallet,balance&order=balance.desc&limit=5")
+        ]);
+        const tipChanged = chain[0].tip_hash !== state.tip || chain[0].difficulty !== state.difficulty;
+        state.tip = chain[0].tip_hash;
+        state.height = Number(chain[0].height);
+        state.difficulty = chain[0].difficulty;
+        el.balance.textContent = Number(mine[0] ? mine[0].balance : 0).toLocaleString();
+        renderChain();
+        renderLedger(coins);
+        renderBoard(board);
+        setNetwork("live", `Live · coin ${state.height.toLocaleString()}`);
+        if (tipChanged && state.mining && !state.submitting) restartWorkers();
+      } catch (error) {
+        setNetwork("error", "Offline");
+        setStatus(`Can't reach the ledger: ${error.message}`, "error");
+      }
+    }
+
+    function stopWorkers() {
+      for (const worker of state.workers) {
+        worker.postMessage({ type: "stop" });
+        worker.terminate();
+      }
+      state.workers = [];
+      state.rates.clear();
+    }
+
+    let workerUrl = "";
+    function spawnWorker(index) {
+      if (!workerUrl) workerUrl = URL.createObjectURL(new Blob([$("miner-worker").textContent], { type: "text/javascript" }));
+      const worker = new Worker(workerUrl);
+      worker.onmessage = (event) => handleWorker(index, event.data);
+      worker.postMessage({ type: "start", wallet: state.wallet, tip: state.tip, difficulty: state.difficulty });
+      state.workers.push(worker);
+    }
+
+    function restartWorkers() {
+      stopWorkers();
+      if (!state.mining) return;
+      for (let i = 0; i < state.threads; i += 1) spawnWorker(i);
+    }
+
+    function handleWorker(index, message) {
+      if (message.type === "stats") {
+        state.rates.set(index, message.hashes / Math.max(message.ms, 1) * 1000);
+        if (index === 0) pushStream(message.sample);
+        renderHashrate();
+      } else if (message.type === "found") {
+        submitCoin(message.nonce);
+      } else if (message.type === "error") {
+        setStatus(`Miner error: ${message.message}`, "error");
+      }
+    }
+
+    async function submitCoin(nonce) {
+      if (state.submitting) return;
+      state.submitting = true;
+      stopWorkers();
+      setStatus("Valid hash found. Submitting to the ledger…");
+      try {
+        const result = await api("rpc/submit_coin", {
+          method: "POST",
+          body: JSON.stringify({ p_wallet: state.wallet, p_nonce: nonce })
+        });
+        state.sessionCoins += 1;
+        state.sessionEarned += result.reward;
+        renderSession();
+        toast(`+${result.reward} ROCKY · coin #${result.height}`);
+        setStatus(`Mined coin #${result.height}: ${shorten(result.hash, 16, 8)}`, "success");
+      } catch (error) {
+        setStatus(`Not accepted: ${error.message}. Searching again…`, "error");
       } finally {
-        mining = false;
-        elements.mineProgress.hidden = true;
-        elements.mineProgress.value = 0;
-        render();
+        state.submitting = false;
+        await refresh();
+        if (state.mining) restartWorkers();
       }
     }
 
-    elements.createWallet.addEventListener("click", () => {
-      const wallet = { id: randomHex(12), address: `RC${randomHex(20)}` };
-      state.wallets.push(wallet);
-      state.activeWalletId = wallet.id;
-      saveState();
-      elements.mineStatus.textContent = "Wallet ready. Mine a block to earn RockyCoin.";
-      render();
-    });
+    function setMining(on) {
+      state.mining = on;
+      el.mineBtn.dataset.active = String(on);
+      el.mineBtn.textContent = on ? "Stop mining" : "Start mining";
+      if (on) {
+        setStatus("Searching for a valid hash… coins arrive at random, so this can take a while.");
+        restartWorkers();
+      } else {
+        stopWorkers();
+        setStatus("Mining stopped.");
+      }
+      renderHashrate();
+    }
 
-    elements.walletSelect.addEventListener("change", (event) => {
-      state.activeWalletId = event.target.value || null;
-      saveState();
-      render();
-    });
+    function changeThreads(delta) {
+      state.threads = Math.min(Math.max(state.threads + delta, 1), MAX_THREADS);
+      renderSession();
+      if (state.mining && !state.submitting) restartWorkers();
+    }
 
-    elements.copyAddress.addEventListener("click", async () => {
-      const wallet = activeWallet();
-      if (!wallet) return;
+    function switchWallet(address) {
+      state.wallet = address;
+      saveWallet(address);
+      state.sessionCoins = 0;
+      state.sessionEarned = 0;
+      renderWallet();
+      renderSession();
+      if (state.mining && !state.submitting) restartWorkers();
+      refresh();
+    }
+
+    el.mineBtn.addEventListener("click", () => setMining(!state.mining));
+    $("threads-up").addEventListener("click", () => changeThreads(1));
+    $("threads-down").addEventListener("click", () => changeThreads(-1));
+
+    $("copy-btn").addEventListener("click", async () => {
       try {
-        await navigator.clipboard.writeText(wallet.address);
-        setAppStatus("Wallet address copied.", "success");
+        await navigator.clipboard.writeText(state.wallet);
+        toast("Address copied");
       } catch {
-        setAppStatus("Clipboard access is unavailable. Select and copy the address above.", "error");
+        setStatus("Clipboard unavailable. Select the address and copy it manually.", "error");
       }
     });
 
-    elements.mineButton.addEventListener("click", mineBlock);
-    elements.cancelMining.addEventListener("click", () => { cancelRequested = true; });
+    $("new-btn").addEventListener("click", () => {
+      if (confirm("Create a new wallet? Coins on your current address stay on the ledger, but you must copy the address first to use it again.")) {
+        switchWallet(`RC${randomHex(20)}`);
+      }
+    });
 
-    async function start() {
-      loadState();
-      if (!await validateChain(state.chain)) {
-        state.chain = [GENESIS_BLOCK];
-        saveState();
-        setAppStatus("The saved chain failed validation, so it was reset. Your wallets were kept.", "error");
+    $("import-btn").addEventListener("click", () => {
+      const entered = (prompt("Paste a wallet address (RC followed by 40 hex characters):") || "").trim().toLowerCase();
+      if (!entered) return;
+      if (!ADDRESS_PATTERN.test(entered)) {
+        setStatus("That isn't a valid RockyCoin address.", "error");
+        return;
       }
-      render();
-      elements.mineStatus.textContent = activeWallet()
-        ? "Wallet ready. Mine a block to earn RockyCoin."
-        : "Create a wallet before mining.";
-      if (!crypto.subtle) {
-        elements.mineButton.disabled = true;
-        elements.mineStatus.textContent = "SHA-256 is unavailable. Open this page from localhost in a modern browser.";
-      }
+      switchWallet(entered);
+    });
+
+    state.wallet = loadWallet();
+    renderWallet();
+    renderChain();
+    renderSession();
+    renderLedger([]);
+    renderBoard([]);
+
+    if (!configured) {
+      el.banner.hidden = false;
+      setNetwork("error", "Not configured");
+    } else if (typeof Worker === "undefined") {
+      setNetwork("error", "Unsupported browser");
+      setStatus("This browser can't run mining workers.", "error");
+    } else {
+      el.mineBtn.disabled = false;
+      refresh();
+      setInterval(refresh, POLL_MS);
     }
-
-    start();
   </script>
 </body>
 </html>
