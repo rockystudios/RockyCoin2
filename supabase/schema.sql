@@ -36,29 +36,51 @@ create table if not exists public.mined_coins (
 
 create index if not exists mined_coins_wallet_idx on public.mined_coins (wallet, created_at desc);
 
-create or replace view public.balances
+-- Optional display name for a wallet (lowercase letters, digits, underscore).
+alter table public.wallets add column if not exists name text check (name ~ '^[a-z0-9_]{3,20}$');
+create unique index if not exists wallets_name_idx on public.wallets (name);
+
+-- Transfers between wallets. Written only by the transfer() function below.
+create table if not exists public.transfers (
+  id bigint generated always as identity primary key,
+  from_wallet text not null references public.wallets (address),
+  to_wallet text not null references public.wallets (address),
+  amount int not null check (amount > 0),
+  created_at timestamptz not null default now(),
+  check (from_wallet <> to_wallet)
+);
+create index if not exists transfers_from_idx on public.transfers (from_wallet, created_at desc);
+create index if not exists transfers_to_idx on public.transfers (to_wallet, created_at desc);
+
+-- balance = mined + received - sent
+drop view if exists public.balances;
+create view public.balances
 with (security_invoker = on) as
-select wallet,
-       sum(reward)::bigint as balance,
-       count(*)::bigint as coins,
-       max(created_at) as last_mined
-from public.mined_coins
-group by wallet;
+select w.address as wallet,
+       w.name,
+       (coalesce((select sum(reward) from public.mined_coins m where m.wallet = w.address), 0)
+        + coalesce((select sum(amount) from public.transfers t where t.to_wallet = w.address), 0)
+        - coalesce((select sum(amount) from public.transfers t where t.from_wallet = w.address), 0))::bigint as balance,
+       (select count(*) from public.mined_coins m where m.wallet = w.address)::bigint as coins
+from public.wallets w;
 
 -- The website can read everything but cannot write to any table directly.
 alter table public.chain_state enable row level security;
 alter table public.wallets enable row level security;
 alter table public.mined_coins enable row level security;
+alter table public.transfers enable row level security;
 
 drop policy if exists "public read" on public.chain_state;
 drop policy if exists "public read" on public.wallets;
 drop policy if exists "public read" on public.mined_coins;
+drop policy if exists "public read" on public.transfers;
 create policy "public read" on public.chain_state for select to anon, authenticated using (true);
 create policy "public read" on public.wallets for select to anon, authenticated using (true);
 create policy "public read" on public.mined_coins for select to anon, authenticated using (true);
+create policy "public read" on public.transfers for select to anon, authenticated using (true);
 
-revoke all on public.chain_state, public.wallets, public.mined_coins, public.balances from anon, authenticated;
-grant select on public.chain_state, public.wallets, public.mined_coins, public.balances to anon, authenticated;
+revoke all on public.chain_state, public.wallets, public.mined_coins, public.transfers, public.balances from anon, authenticated;
+grant select on public.chain_state, public.wallets, public.mined_coins, public.transfers, public.balances to anon, authenticated;
 
 -- The only way to write: submit a proof of work. The server recomputes the hash, so a client cannot fake a coin.
 -- Hash input is: wallet || ':' || previous coin hash || ':' || nonce, hashed with SHA-256.
@@ -116,3 +138,109 @@ $$;
 
 revoke all on function public.submit_coin(text, text) from public;
 grant execute on function public.submit_coin(text, text) to anon, authenticated;
+
+-- Wallet ownership: a wallet is created from a 64-hex secret key, and its address is derived from that key:
+--   address = 'RC' || first 40 hex of SHA-256('rocky-address:' || secret)
+-- Only someone who knows the secret can name the wallet or send coins from it.
+create or replace function public.wallet_address(p_secret text)
+returns text
+language plpgsql
+immutable
+set search_path = public, extensions
+as $$
+begin
+  if p_secret is null or p_secret !~ '^[a-f0-9]{64}$' then
+    raise exception 'invalid secret key';
+  end if;
+  return 'RC' || left(encode(digest('rocky-address:' || p_secret, 'sha256'), 'hex'), 40);
+end;
+$$;
+
+create or replace function public.register_wallet(p_secret text)
+returns json
+language plpgsql
+security definer
+set search_path = public, extensions
+as $$
+declare
+  v_address text := public.wallet_address(p_secret);
+  v_name text;
+begin
+  insert into public.wallets (address) values (v_address) on conflict do nothing;
+  select name into v_name from public.wallets where address = v_address;
+  return json_build_object('address', v_address, 'name', v_name);
+end;
+$$;
+
+create or replace function public.set_wallet_name(p_secret text, p_name text)
+returns json
+language plpgsql
+security definer
+set search_path = public, extensions
+as $$
+declare
+  v_address text := public.wallet_address(p_secret);
+  v_name text := lower(trim(coalesce(p_name, '')));
+begin
+  if v_name !~ '^[a-z0-9_]{3,20}$' then
+    raise exception 'name must be 3-20 characters: letters, numbers or underscore';
+  end if;
+  insert into public.wallets (address) values (v_address) on conflict do nothing;
+  begin
+    update public.wallets set name = v_name where address = v_address;
+  exception when unique_violation then
+    raise exception 'that name is already taken';
+  end;
+  return json_build_object('address', v_address, 'name', v_name);
+end;
+$$;
+
+-- Send coins to an address (RC...) or a wallet name. The recipient must already exist on the ledger.
+create or replace function public.transfer(p_secret text, p_to text, p_amount int)
+returns json
+language plpgsql
+security definer
+set search_path = public, extensions
+as $$
+declare
+  v_from text := public.wallet_address(p_secret);
+  v_to text;
+  v_target text := lower(trim(coalesce(p_to, '')));
+  v_balance bigint;
+begin
+  if p_amount is null or p_amount < 1 then
+    raise exception 'amount must be at least 1';
+  end if;
+
+  if v_target ~ '^rc[a-f0-9]{40}$' then
+    select address into v_to from public.wallets where address = upper(left(v_target, 2)) || substr(v_target, 3);
+  else
+    select address into v_to from public.wallets where name = ltrim(v_target, '@');
+  end if;
+  if v_to is null then
+    raise exception 'recipient not found';
+  end if;
+  if v_to = v_from then
+    raise exception 'you cannot send coins to yourself';
+  end if;
+
+  -- Serialise transfers so two requests cannot spend the same coins.
+  perform 1 from public.chain_state where id = 1 for update;
+
+  select balance into v_balance from public.balances where wallet = v_from;
+  if coalesce(v_balance, 0) < p_amount then
+    raise exception 'insufficient balance';
+  end if;
+
+  insert into public.transfers (from_wallet, to_wallet, amount) values (v_from, v_to, p_amount);
+  return json_build_object('to', v_to, 'amount', p_amount, 'balance', v_balance - p_amount);
+end;
+$$;
+
+revoke all on function public.wallet_address(text) from public;
+revoke all on function public.register_wallet(text) from public;
+revoke all on function public.set_wallet_name(text, text) from public;
+revoke all on function public.transfer(text, text, int) from public;
+grant execute on function public.register_wallet(text) to anon, authenticated;
+grant execute on function public.set_wallet_name(text, text) to anon, authenticated;
+grant execute on function public.transfer(text, text, int) to anon, authenticated;
