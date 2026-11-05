@@ -91,7 +91,7 @@ func TestForkResolvesToLongestValidChain(t *testing.T) {
 		t.Fatal("expected sync to adopt the longer chain")
 	}
 	chain, balances, _ := a.node.snapshot()
-	if len(chain) != 3 || balances[minerA] != 0 || balances[minerB] != 2*blockReward {
+	if len(chain) != 3 || balances[minerA] != 0 || balances[minerB] != 2*initialBlockReward {
 		t.Fatalf("unexpected state after reorg: len=%d balances=%#v", len(chain), balances)
 	}
 }
