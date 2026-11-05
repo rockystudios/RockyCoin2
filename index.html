@@ -1,0 +1,504 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#101b2b">
+  <title>RockyCoin — Local Blockchain</title>
+  <style>
+    :root {
+      color-scheme: dark;
+      font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      background: #101b2b;
+      color: #eef4fa;
+      font-synthesis: none;
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      min-width: 320px;
+      background:
+        radial-gradient(ellipse at 82% 0%, #233e59 0, transparent 38rem),
+        #101b2b;
+    }
+
+    button, select { font: inherit; }
+
+    button {
+      min-height: 42px;
+      padding: 0.65rem 1rem;
+      border: 1px solid #425a72;
+      border-radius: 9px;
+      background: #23384e;
+      color: #f4f8fc;
+      font-weight: 650;
+      cursor: pointer;
+    }
+
+    button:hover:not(:disabled) { background: #304b66; }
+    button:disabled { opacity: 0.5; cursor: not-allowed; }
+    button:focus-visible, select:focus-visible { outline: 2px solid #75d7b2; outline-offset: 2px; }
+
+    .primary {
+      border-color: #69d6ad;
+      background: #62cba3;
+      color: #10251f;
+    }
+
+    .primary:hover:not(:disabled) { background: #82e3bf; }
+
+    .shell { width: min(1120px, calc(100% - 2rem)); margin: 0 auto; padding: 2.5rem 0 3rem; }
+
+    header { display: flex; align-items: center; gap: 1rem; margin-bottom: 2rem; }
+
+    .brand-mark {
+      display: grid;
+      width: 52px;
+      height: 52px;
+      place-items: center;
+      border: 1px solid #6bd2ab;
+      border-radius: 16px;
+      color: #83e0bb;
+      font-size: 1.65rem;
+      font-weight: 800;
+      transform: rotate(-5deg);
+    }
+
+    h1 { margin: 0; font-size: clamp(1.7rem, 4vw, 2.4rem); letter-spacing: -0.04em; }
+    .subtitle { margin: 0.25rem 0 0; color: #a7b7c8; }
+    .eyebrow { color: #7edbb6; font-size: 0.72rem; font-weight: 800; letter-spacing: 0.14em; text-transform: uppercase; }
+
+    .notice {
+      margin-bottom: 1.25rem;
+      padding: 0.9rem 1rem;
+      border: 1px solid #655633;
+      border-radius: 10px;
+      background: #302a1d;
+      color: #f2d896;
+      line-height: 1.5;
+    }
+
+    .notice strong { color: #ffe4a3; }
+    .grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 1rem; }
+
+    .card {
+      min-width: 0;
+      padding: 1.35rem;
+      border: 1px solid #34485c;
+      border-radius: 15px;
+      background: rgb(25 40 57 / 92%);
+      box-shadow: 0 12px 30px rgb(0 0 0 / 12%);
+    }
+
+    .card h2 { margin: 0 0 1.15rem; font-size: 1.05rem; }
+    .wallet-card, .mining-card { min-height: 245px; }
+    .field-label { display: block; margin-bottom: 0.45rem; color: #a7b7c8; font-size: 0.85rem; }
+
+    select {
+      width: 100%;
+      min-height: 43px;
+      padding: 0.6rem 0.75rem;
+      border: 1px solid #425a72;
+      border-radius: 8px;
+      background: #142235;
+      color: #eef4fa;
+    }
+
+    .address-box {
+      overflow-wrap: anywhere;
+      margin: 1rem 0;
+      padding: 0.8rem;
+      border: 1px solid #34485c;
+      border-radius: 8px;
+      background: #142235;
+      color: #b7c8d8;
+      font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+      font-size: 0.78rem;
+      line-height: 1.5;
+    }
+
+    .balance { margin: 1rem 0 0.25rem; font-size: clamp(2rem, 5vw, 2.7rem); font-weight: 750; letter-spacing: -0.05em; }
+    .coin { color: #82e0ba; font-size: 1rem; letter-spacing: 0; }
+    .muted, .hint { color: #a7b7c8; font-size: 0.88rem; line-height: 1.5; }
+    .button-row { display: flex; flex-wrap: wrap; gap: 0.65rem; }
+
+    .mine-status {
+      min-height: 3.2rem;
+      margin: 1.15rem 0 0.7rem;
+      color: #b7c8d8;
+      font-size: 0.9rem;
+      line-height: 1.5;
+    }
+
+    progress { width: 100%; height: 8px; accent-color: #73d8b2; }
+
+    .stats { display: grid; grid-template-columns: repeat(2, 1fr); gap: 0.75rem; margin-top: 1rem; }
+    .stat { padding: 0.8rem; border-radius: 9px; background: #142235; }
+    .stat-label { display: block; margin-bottom: 0.3rem; color: #a7b7c8; font-size: 0.75rem; }
+    .stat-value { font-size: 1.08rem; font-weight: 700; }
+
+    .chain-card { grid-column: 1 / -1; }
+    .chain-heading { display: flex; justify-content: space-between; align-items: center; gap: 1rem; }
+    .chain-list { display: grid; gap: 0.65rem; margin: 0; padding: 0; list-style: none; }
+    .block { display: grid; grid-template-columns: minmax(80px, 0.5fr) minmax(0, 2fr) minmax(95px, 0.7fr); gap: 1rem; align-items: center; padding: 0.85rem; border: 1px solid #34485c; border-radius: 9px; }
+    .block-number { font-weight: 700; }
+    .block-detail { min-width: 0; color: #a7b7c8; font-size: 0.82rem; overflow-wrap: anywhere; }
+    .block-reward { color: #82e0ba; font-size: 0.88rem; text-align: right; white-space: nowrap; }
+    .empty { padding: 1.25rem; border: 1px dashed #425a72; border-radius: 9px; color: #a7b7c8; text-align: center; }
+    #app-status { min-height: 1.5rem; margin: 1rem 0 0; color: #b7c8d8; font-size: 0.85rem; }
+    #app-status[data-kind="error"] { color: #ffaaa3; }
+    #app-status[data-kind="success"] { color: #82e0ba; }
+
+    @media (max-width: 720px) {
+      .shell { padding-top: 1.5rem; }
+      .grid { grid-template-columns: 1fr; }
+      .chain-card { grid-column: auto; }
+      .wallet-card, .mining-card { min-height: auto; }
+      .block { grid-template-columns: 1fr auto; gap: 0.4rem 0.8rem; }
+      .block-detail { grid-column: 1 / -1; grid-row: 2; }
+      .block-reward { grid-column: 2; grid-row: 1; }
+    }
+  </style>
+</head>
+<body>
+  <main class="shell">
+    <header>
+      <div class="brand-mark" aria-hidden="true">R</div>
+      <div>
+        <div class="eyebrow">Local blockchain demo</div>
+        <h1>RockyCoin</h1>
+        <p class="subtitle">Create a wallet. Mine a block. Explore your chain.</p>
+      </div>
+    </header>
+
+    <aside class="notice" role="note">
+      <strong>Demo only:</strong> RockyCoin is stored in this browser and is not real money.
+      Wallet addresses are local identifiers, not secure keys. Clearing browser data removes your wallets and chain.
+    </aside>
+
+    <div class="grid">
+      <section class="card wallet-card" aria-labelledby="wallet-title">
+        <h2 id="wallet-title">Your wallet</h2>
+        <label class="field-label" for="wallet-select">Active wallet</label>
+        <select id="wallet-select" aria-label="Select active wallet"></select>
+        <div id="wallet-address" class="address-box">Create a wallet to get started.</div>
+        <div class="button-row">
+          <button id="create-wallet" class="primary" type="button">Create wallet</button>
+          <button id="copy-address" type="button" disabled>Copy address</button>
+        </div>
+        <p class="balance"><span id="wallet-balance">0</span> <span class="coin">ROCKY</span></p>
+        <p class="muted">Balance for the selected wallet</p>
+      </section>
+
+      <section class="card mining-card" aria-labelledby="mining-title">
+        <h2 id="mining-title">Mining</h2>
+        <p class="muted">Mine a block to the selected wallet. Each block currently rewards <strong>50 ROCKY</strong>.</p>
+        <div class="button-row">
+          <button id="mine-button" class="primary" type="button" disabled>Mine 50 ROCKY</button>
+          <button id="cancel-mining" type="button" hidden>Cancel</button>
+        </div>
+        <p id="mine-status" class="mine-status" aria-live="polite">Create a wallet before mining.</p>
+        <progress id="mine-progress" max="1" value="0" aria-label="Mining progress" hidden></progress>
+      </section>
+
+      <section class="card chain-card" aria-labelledby="chain-title">
+        <div class="chain-heading">
+          <h2 id="chain-title">Local blockchain</h2>
+          <span class="eyebrow">Proof of work</span>
+        </div>
+        <div class="stats">
+          <div class="stat"><span class="stat-label">Blocks</span><span id="block-count" class="stat-value">1</span></div>
+          <div class="stat"><span class="stat-label">RockyCoin mined</span><span id="total-mined" class="stat-value">0 ROCKY</span></div>
+        </div>
+        <h2 style="margin-top: 1.4rem">Recent blocks</h2>
+        <ol id="chain-list" class="chain-list" aria-live="polite"></ol>
+        <p id="app-status" role="status" aria-live="polite"></p>
+      </section>
+    </div>
+  </main>
+
+  <script>
+    "use strict";
+
+    const STORAGE_KEY = "rockycoin.local-demo.v1";
+    const REWARD = 50;
+    const DIFFICULTY = 2;
+    const TARGET_PREFIX = "0".repeat(DIFFICULTY);
+    const GENESIS_BLOCK = {
+      index: 0,
+      timestamp: 0,
+      previousHash: "0",
+      miner: "RockyCoin",
+      reward: 0,
+      nonce: 0,
+      hash: "genesis"
+    };
+
+    let state = { wallets: [], activeWalletId: null, chain: [GENESIS_BLOCK] };
+    let mining = false;
+    let cancelRequested = false;
+
+    const elements = {
+      walletSelect: document.querySelector("#wallet-select"),
+      walletAddress: document.querySelector("#wallet-address"),
+      walletBalance: document.querySelector("#wallet-balance"),
+      createWallet: document.querySelector("#create-wallet"),
+      copyAddress: document.querySelector("#copy-address"),
+      mineButton: document.querySelector("#mine-button"),
+      cancelMining: document.querySelector("#cancel-mining"),
+      mineStatus: document.querySelector("#mine-status"),
+      mineProgress: document.querySelector("#mine-progress"),
+      blockCount: document.querySelector("#block-count"),
+      totalMined: document.querySelector("#total-mined"),
+      chainList: document.querySelector("#chain-list"),
+      appStatus: document.querySelector("#app-status")
+    };
+
+    function randomHex(byteCount) {
+      const bytes = new Uint8Array(byteCount);
+      crypto.getRandomValues(bytes);
+      return Array.from(bytes, (byte) => byte.toString(16).padStart(2, "0")).join("");
+    }
+
+    function blockPayload(block) {
+      return JSON.stringify([
+        block.index,
+        block.timestamp,
+        block.previousHash,
+        block.miner,
+        block.reward,
+        block.nonce
+      ]);
+    }
+
+    async function hashBlock(block) {
+      const bytes = new TextEncoder().encode(blockPayload(block));
+      const digest = await crypto.subtle.digest("SHA-256", bytes);
+      return Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, "0")).join("");
+    }
+
+    function setAppStatus(message, kind = "") {
+      elements.appStatus.textContent = message;
+      elements.appStatus.dataset.kind = kind;
+    }
+
+    function saveState() {
+      try {
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+        return true;
+      } catch {
+        setAppStatus("Could not save RockyCoin data in this browser. Check local storage settings.", "error");
+        return false;
+      }
+    }
+
+    function loadState() {
+      try {
+        const saved = JSON.parse(localStorage.getItem(STORAGE_KEY) || "null");
+        if (!saved || typeof saved !== "object") return;
+
+        const wallets = Array.isArray(saved.wallets) ? saved.wallets.filter((wallet) =>
+          wallet && typeof wallet.id === "string" && /^[a-f0-9]{24}$/.test(wallet.id) &&
+          typeof wallet.address === "string" && /^RC[a-f0-9]{40}$/.test(wallet.address)
+        ) : [];
+        state.wallets = wallets;
+        state.activeWalletId = wallets.some((wallet) => wallet.id === saved.activeWalletId)
+          ? saved.activeWalletId
+          : wallets[0]?.id || null;
+        state.chain = Array.isArray(saved.chain) ? saved.chain : [GENESIS_BLOCK];
+      } catch {
+        state = { wallets: [], activeWalletId: null, chain: [GENESIS_BLOCK] };
+        setAppStatus("Saved data could not be read, so a fresh local chain was started.", "error");
+      }
+    }
+
+    async function validateChain(chain) {
+      if (!Array.isArray(chain) || chain.length === 0 || JSON.stringify(chain[0]) !== JSON.stringify(GENESIS_BLOCK)) {
+        return false;
+      }
+
+      for (let index = 1; index < chain.length; index += 1) {
+        const block = chain[index];
+        const previous = chain[index - 1];
+        if (!block || block.index !== index || block.previousHash !== previous.hash ||
+            typeof block.timestamp !== "number" || !Number.isFinite(block.timestamp) ||
+            typeof block.miner !== "string" || !/^RC[a-f0-9]{40}$/.test(block.miner) ||
+            block.reward !== REWARD || !Number.isSafeInteger(block.nonce) || block.nonce < 0 ||
+            typeof block.hash !== "string" || !block.hash.startsWith(TARGET_PREFIX)) {
+          return false;
+        }
+        if (await hashBlock(block) !== block.hash) return false;
+      }
+      return true;
+    }
+
+    function activeWallet() {
+      return state.wallets.find((wallet) => wallet.id === state.activeWalletId) || null;
+    }
+
+    function balanceFor(address) {
+      return state.chain.reduce((total, block) => total + (block.miner === address ? block.reward : 0), 0);
+    }
+
+    function render() {
+      const selectedWallet = activeWallet();
+      elements.walletSelect.replaceChildren();
+
+      if (state.wallets.length === 0) {
+        const option = document.createElement("option");
+        option.textContent = "No wallets yet";
+        option.value = "";
+        elements.walletSelect.append(option);
+        elements.walletSelect.disabled = true;
+      } else {
+        elements.walletSelect.disabled = mining;
+        for (const wallet of state.wallets) {
+          const option = document.createElement("option");
+          option.value = wallet.id;
+          option.textContent = `${wallet.address.slice(0, 10)}…${wallet.address.slice(-6)}`;
+          option.selected = wallet.id === state.activeWalletId;
+          elements.walletSelect.append(option);
+        }
+      }
+
+      elements.walletAddress.textContent = selectedWallet
+        ? selectedWallet.address
+        : "Create a wallet to get started.";
+      elements.walletBalance.textContent = selectedWallet ? balanceFor(selectedWallet.address).toLocaleString() : "0";
+      elements.createWallet.disabled = mining;
+      elements.copyAddress.disabled = !selectedWallet || mining;
+      elements.mineButton.disabled = !selectedWallet || mining;
+      elements.cancelMining.hidden = !mining;
+      elements.blockCount.textContent = state.chain.length.toLocaleString();
+      const totalMined = state.chain.reduce((sum, block) => sum + block.reward, 0);
+      elements.totalMined.textContent = `${totalMined.toLocaleString()} ROCKY`;
+
+      elements.chainList.replaceChildren();
+      for (const block of state.chain.slice(1).reverse().slice(0, 10)) {
+        const item = document.createElement("li");
+        item.className = "block";
+        const number = document.createElement("span");
+        number.className = "block-number";
+        number.textContent = `Block #${block.index}`;
+        const detail = document.createElement("span");
+        detail.className = "block-detail";
+        detail.textContent = `Mined by ${block.miner} · ${new Date(block.timestamp).toLocaleString()}`;
+        const reward = document.createElement("span");
+        reward.className = "block-reward";
+        reward.textContent = `+${block.reward} ROCKY`;
+        item.append(number, detail, reward);
+        elements.chainList.append(item);
+      }
+      if (elements.chainList.childElementCount === 0) {
+        const empty = document.createElement("li");
+        empty.className = "empty";
+        empty.textContent = "No blocks mined yet. Mine the first block to get started.";
+        elements.chainList.append(empty);
+      }
+    }
+
+    async function mineBlock() {
+      const wallet = activeWallet();
+      if (!wallet || mining) return;
+      mining = true;
+      cancelRequested = false;
+      elements.mineProgress.hidden = false;
+      elements.mineProgress.value = 0;
+      elements.mineStatus.textContent = `Searching for a valid hash (difficulty ${DIFFICULTY})…`;
+      render();
+
+      const previous = state.chain[state.chain.length - 1];
+      const block = {
+        index: state.chain.length,
+        timestamp: Date.now(),
+        previousHash: previous.hash,
+        miner: wallet.address,
+        reward: REWARD,
+        nonce: 0,
+        hash: ""
+      };
+
+      try {
+        while (!cancelRequested) {
+          block.hash = await hashBlock(block);
+          if (block.hash.startsWith(TARGET_PREFIX)) {
+            state.chain.push(block);
+            saveState();
+            elements.mineStatus.textContent = `Block #${block.index} mined! ${REWARD} ROCKY added to your wallet.`;
+            elements.mineStatus.dataset.kind = "success";
+            setAppStatus("Your latest block is saved in this browser.", "success");
+            break;
+          }
+          block.nonce += 1;
+          if (block.nonce % 128 === 0) {
+            elements.mineStatus.textContent = `Trying nonce ${block.nonce.toLocaleString()}…`;
+            elements.mineProgress.value = (block.nonce % 2048) / 2048;
+            await new Promise((resolve) => setTimeout(resolve, 0));
+          }
+        }
+        if (cancelRequested) {
+          elements.mineStatus.textContent = "Mining cancelled. No block was added.";
+        }
+      } catch {
+        elements.mineStatus.textContent = "Mining failed. This browser may not support the Web Crypto API.";
+        setAppStatus("Use a modern browser and open RockyCoin from localhost to enable SHA-256 mining.", "error");
+      } finally {
+        mining = false;
+        elements.mineProgress.hidden = true;
+        elements.mineProgress.value = 0;
+        render();
+      }
+    }
+
+    elements.createWallet.addEventListener("click", () => {
+      const wallet = { id: randomHex(12), address: `RC${randomHex(20)}` };
+      state.wallets.push(wallet);
+      state.activeWalletId = wallet.id;
+      saveState();
+      elements.mineStatus.textContent = "Wallet ready. Mine a block to earn RockyCoin.";
+      render();
+    });
+
+    elements.walletSelect.addEventListener("change", (event) => {
+      state.activeWalletId = event.target.value || null;
+      saveState();
+      render();
+    });
+
+    elements.copyAddress.addEventListener("click", async () => {
+      const wallet = activeWallet();
+      if (!wallet) return;
+      try {
+        await navigator.clipboard.writeText(wallet.address);
+        setAppStatus("Wallet address copied.", "success");
+      } catch {
+        setAppStatus("Clipboard access is unavailable. Select and copy the address above.", "error");
+      }
+    });
+
+    elements.mineButton.addEventListener("click", mineBlock);
+    elements.cancelMining.addEventListener("click", () => { cancelRequested = true; });
+
+    async function start() {
+      loadState();
+      if (!await validateChain(state.chain)) {
+        state.chain = [GENESIS_BLOCK];
+        saveState();
+        setAppStatus("The saved chain failed validation, so it was reset. Your wallets were kept.", "error");
+      }
+      render();
+      elements.mineStatus.textContent = activeWallet()
+        ? "Wallet ready. Mine a block to earn RockyCoin."
+        : "Create a wallet before mining.";
+      if (!crypto.subtle) {
+        elements.mineButton.disabled = true;
+        elements.mineStatus.textContent = "SHA-256 is unavailable. Open this page from localhost in a modern browser.";
+      }
+    }
+
+    start();
+  </script>
+</body>
+</html>
