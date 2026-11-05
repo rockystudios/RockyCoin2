@@ -17,6 +17,10 @@ import (
 const (
 	blockReward = uint64(50)
 	difficulty  = "00"
+
+	maxBlockTransactions   = 500
+	maxPendingTransactions = 500
+	maxClockDrift          = 2 * time.Hour
 )
 
 type Transaction struct {
@@ -134,34 +138,121 @@ func blockHash(block Block) string {
 	return hex.EncodeToString(sum[:])
 }
 
-func (n *Node) loadChain(chain []Block) error {
+// checkBlock validates block against its predecessor and applies it to balances and nonces.
+func checkBlock(block, previous Block, balances, nonces map[string]uint64) error {
+	if block.Index != previous.Index+1 || block.PreviousHash != previous.Hash {
+		return errors.New("block does not extend its predecessor")
+	}
+	if block.Hash != blockHash(block) || !strings.HasPrefix(block.Hash, difficulty) {
+		return errors.New("invalid proof of work")
+	}
+	if !validAddress(block.Miner) {
+		return errors.New("invalid miner address")
+	}
+	if block.Timestamp < previous.Timestamp || block.Timestamp > time.Now().Add(maxClockDrift).UnixMilli() {
+		return errors.New("invalid block timestamp")
+	}
+	if len(block.Transactions) > maxBlockTransactions {
+		return errors.New("too many transactions in block")
+	}
+	for _, tx := range block.Transactions {
+		if err := applyTransaction(tx, balances, nonces); err != nil {
+			return fmt.Errorf("invalid transaction: %w", err)
+		}
+	}
+	if balances[block.Miner] > ^uint64(0)-blockReward {
+		return errors.New("miner balance overflow")
+	}
+	balances[block.Miner] += blockReward
+	return nil
+}
+
+// validateChain fully verifies a chain from genesis and returns the resulting account state.
+func validateChain(chain []Block) (map[string]uint64, map[string]uint64, error) {
 	if len(chain) == 0 || !equalBlocks(chain[0], genesisBlock()) {
-		return errors.New("missing or invalid genesis block")
+		return nil, nil, errors.New("missing or invalid genesis block")
 	}
 	balances := make(map[string]uint64)
 	nonces := make(map[string]uint64)
 	for i := 1; i < len(chain); i++ {
-		block := chain[i]
-		previous := chain[i-1]
-		if block.Index != uint64(i) || block.PreviousHash != previous.Hash ||
-			block.Hash != blockHash(block) || !strings.HasPrefix(block.Hash, difficulty) ||
-			!validAddress(block.Miner) {
-			return fmt.Errorf("invalid block %d", i)
+		if err := checkBlock(chain[i], chain[i-1], balances, nonces); err != nil {
+			return nil, nil, fmt.Errorf("invalid block %d: %w", i, err)
 		}
-		for _, tx := range block.Transactions {
-			if err := applyTransaction(tx, balances, nonces); err != nil {
-				return fmt.Errorf("invalid transaction in block %d: %w", i, err)
-			}
-		}
-		if balances[block.Miner] > ^uint64(0)-blockReward {
-			return fmt.Errorf("reward overflow in block %d", i)
-		}
-		balances[block.Miner] += blockReward
+	}
+	return balances, nonces, nil
+}
+
+func (n *Node) loadChain(chain []Block) error {
+	balances, nonces, err := validateChain(chain)
+	if err != nil {
+		return err
 	}
 	n.chain = append([]Block(nil), chain...)
 	n.balances = balances
 	n.nonces = nonces
 	return nil
+}
+
+// adopt installs an already-validated chain, persists it, and keeps still-valid pending transactions.
+func (n *Node) adopt(chain []Block, balances, nonces map[string]uint64) error {
+	if err := n.persist(chain); err != nil {
+		return err
+	}
+	n.chain = chain
+	n.balances = balances
+	n.nonces = nonces
+
+	pendingBalances := cloneBalances(balances)
+	pendingNonces := cloneBalances(nonces)
+	var kept []Transaction
+	for _, tx := range n.pending {
+		if applyTransaction(tx, pendingBalances, pendingNonces) == nil {
+			kept = append(kept, tx)
+		}
+	}
+	n.pending = kept
+	return nil
+}
+
+var (
+	errKnownBlock   = errors.New("block already known")
+	errNotExtending = errors.New("block does not extend the current chain tip")
+)
+
+// receiveBlock accepts a block from a peer only if it extends the current tip.
+func (n *Node) receiveBlock(block Block) error {
+	n.mu.Lock()
+	defer n.mu.Unlock()
+	tip := n.chain[len(n.chain)-1]
+	if block.Hash == tip.Hash {
+		return errKnownBlock
+	}
+	if block.Index != tip.Index+1 || block.PreviousHash != tip.Hash {
+		return errNotExtending
+	}
+	balances := cloneBalances(n.balances)
+	nonces := cloneBalances(n.nonces)
+	if err := checkBlock(block, tip, balances, nonces); err != nil {
+		return err
+	}
+	return n.adopt(append(append([]Block{}, n.chain...), block), balances, nonces)
+}
+
+// replaceChain adopts a fully valid chain that is strictly longer than the current one.
+func (n *Node) replaceChain(chain []Block) (bool, error) {
+	balances, nonces, err := validateChain(chain)
+	if err != nil {
+		return false, err
+	}
+	n.mu.Lock()
+	defer n.mu.Unlock()
+	if len(chain) <= len(n.chain) {
+		return false, nil
+	}
+	if err := n.adopt(append([]Block(nil), chain...), balances, nonces); err != nil {
+		return false, err
+	}
+	return true, nil
 }
 
 func equalBlocks(a, b Block) bool {
@@ -202,6 +293,9 @@ func (n *Node) addTransaction(tx Transaction) error {
 			return errors.New("pending transaction state is invalid")
 		}
 	}
+	if len(n.pending) >= maxPendingTransactions {
+		return errors.New("transaction pool is full")
+	}
 	if err := applyTransaction(tx, balances, nonces); err != nil {
 		return err
 	}
@@ -241,24 +335,12 @@ func (n *Node) mine(miner string) (Block, error) {
 
 	balances := cloneBalances(n.balances)
 	nonces := cloneBalances(n.nonces)
-	for _, tx := range block.Transactions {
-		if err := applyTransaction(tx, balances, nonces); err != nil {
-			return Block{}, fmt.Errorf("pending transaction became invalid: %w", err)
-		}
-	}
-	if balances[miner] > ^uint64(0)-blockReward {
-		return Block{}, errors.New("miner balance overflow")
-	}
-	balances[miner] += blockReward
-
-	nextChain := append(append([]Block{}, n.chain...), block)
-	if err := n.persist(nextChain); err != nil {
+	if err := checkBlock(block, previous, balances, nonces); err != nil {
 		return Block{}, err
 	}
-	n.chain = nextChain
-	n.balances = balances
-	n.nonces = nonces
-	n.pending = nil
+	if err := n.adopt(append(append([]Block{}, n.chain...), block), balances, nonces); err != nil {
+		return Block{}, err
+	}
 	return block, nil
 }
 
